@@ -4,10 +4,11 @@ LOCALSTACK DEPLOYMENT GUIDE - JUICE SHOP
 
 TL;DR
 =====
-Deploy Juice Shop locally using LocalStack (FREE AWS emulator)
+Deploy Juice Shop locally using LocalStack v4.10+ (FREE AWS emulator)
 - Cost: $0 (vs $85-115/month on real AWS)
 - Time: 15 minutes
 - Perfect for: Learning AWS, DevSecOps training, local development
+- Latest: ECS FireLens support, EKS IRSA, improved logging
 
 DEPLOYMENT FLOW (ASCII DIAGRAM)
 =====
@@ -49,6 +50,10 @@ QUICK START (3 Commands)
 brew install localstack/tap/localstack-cli
 localstack start -d
 localstack status
+
+# Or specify version with Docker:
+docker pull localstack/localstack:4.10.0
+docker run -d -p 4566:4566 --name localstack localstack/localstack:4.10.0
 
 DEPLOYMENT STEPS
 =====
@@ -139,6 +144,47 @@ If LocalStack ECS port forwarding doesn't work:
 docker run -d -p 3000:3000 --name juice-shop juice-shop:latest
 open http://localhost:3000
 
+ADVANCED: ECS FIRELENS LOGGING (v4.10+)
+=====
+LocalStack v4.10+ supports ECS FireLens for advanced logging with Fluent Bit.
+
+# Enhanced task definition with FireLens
+{
+  "family": "juice-shop",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "log_router",
+      "image": "amazon/aws-for-fluent-bit:latest",
+      "essential": true,
+      "firelensConfiguration": {
+        "type": "fluentbit",
+        "options": {
+          "config-file-type": "s3",
+          "config-file-value": "arn:aws:s3:::my-bucket/fluent-bit.conf"
+        }
+      }
+    },
+    {
+      "name": "juice-shop",
+      "image": "000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/juice-shop:latest",
+      "essential": true,
+      "portMappings": [{"containerPort": 3000, "hostPort": 3000}],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "options": {
+          "Name": "cloudwatch",
+          "region": "us-east-1",
+          "log_group_name": "/ecs/juice-shop"
+        }
+      }
+    }
+  ]
+}
+
 MANAGEMENT COMMANDS
 =====
 localstack start -d      # Start
@@ -146,6 +192,7 @@ localstack stop          # Stop
 localstack restart       # Restart
 localstack logs -f       # View logs
 localstack status        # Check status
+localstack update all    # Update to latest version (v4.10+)
 
 MONITORING
 =====
@@ -217,11 +264,26 @@ WHEN TO USE
 LocalStack → Learning, training, local dev, testing
 Real AWS   → Production, staging, customer-facing apps
 
+DEPLOYMENT OPTIONS
+=====
+ECS (This Guide) → Container orchestration, Fargate serverless
+EKS (v4.10+)     → Kubernetes locally, IRSA support, pod identity
+Docker Compose   → Simplest option, no AWS concepts
+
 RESOURCES
 =====
-LocalStack Docs:  https://docs.localstack.cloud/
-Juice Shop Docs:  https://pwning.owasp-juice.shop
-Real AWS Deploy:  /docs/AWS_DEPLOYMENT_PLAN_ECS.txt
+LocalStack Docs:     https://docs.localstack.cloud/
+LocalStack v4.10:    https://blog.localstack.cloud/localstack-for-aws-release-v-4-10-0/
+Juice Shop Docs:     https://pwning.owasp-juice.shop
+Real AWS Deploy:     /docs/AWS_DEPLOYMENT_PLAN_ECS.txt
+
+WHAT'S NEW IN v4.10
+=====
+✓ ECS FireLens - Advanced logging with Fluent Bit (S3 config support)
+✓ EKS IRSA - IAM Roles for Service Accounts in pods
+✓ EKS Pod Identity - Native AWS credentials for K8s pods
+✓ S3 Tables - Apache Iceberg support for data lakehouse
+⚠ Python 3.9 deprecated - Use Python 3.10+
 
 QUICK REFERENCE
 =====

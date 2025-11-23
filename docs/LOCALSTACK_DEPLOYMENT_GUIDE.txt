@@ -9,6 +9,7 @@ Deploy Juice Shop locally using LocalStack v4.10+ (FREE AWS emulator)
 - Time: 15 minutes
 - Perfect for: Learning AWS, DevSecOps training, local development
 - Latest: ECS FireLens support, EKS IRSA, improved logging
+- Status: ✅ TESTED & VERIFIED on macOS with LocalStack v4.10
 
 DEPLOYMENT FLOW (ASCII DIAGRAM)
 =====
@@ -45,30 +46,60 @@ PREREQUISITES
 □ 8GB+ RAM, 10GB+ disk space
 □ Homebrew installed
 
-QUICK START (3 Commands)
+SETUP (TESTED & VERIFIED)
 =====
-brew install localstack/tap/localstack-cli
-localstack start -d
-localstack status
 
-# Or specify version with Docker:
-docker pull localstack/localstack:4.10.0
-docker run -d -p 4566:4566 --name localstack localstack/localstack:4.10.0
+Step 1: Install LocalStack CLI
+-------------------------------
+brew install localstack/tap/localstack-cli
+
+Step 2: Set Auth Token (Pro features - optional)
+-------------------------------------------------
+# If you have LocalStack Pro subscription:
+localstack auth set-token YOUR_AUTH_TOKEN_HERE
+
+# For Community (free) version, skip this step
+
+Step 3: Start LocalStack
+-------------------------
+localstack start
+
+# Or run in background:
+localstack start -d
+
+Step 4: Configure AWS Profile
+------------------------------
+# Add to ~/.aws/config:
+[profile localstack]
+region = us-east-1
+output = json
+endpoint_url = http://localhost:4566
+
+# Add to ~/.aws/credentials:
+[localstack]
+aws_access_key_id = test
+aws_secret_access_key = test
+
+Step 5: Test Configuration
+---------------------------
+# Test S3 access:
+aws s3 ls --profile localstack
+
+# Create test bucket:
+aws s3 mb s3://test-bucket --profile localstack
+
+# If successful, LocalStack is ready!
 
 DEPLOYMENT STEPS
 =====
 
-Step 1: Install AWS CLI Tools (Optional)
------------------------------------------
+Step 1: Install AWS CLI (if not installed)
+-------------------------------------------
 brew install awscli
-pip install awscli-local
-
-# Or use alias (add to ~/.zshrc):
-alias awslocal="aws --endpoint-url=http://localhost:4566"
 
 Step 2: Create ECR Repository
 ------------------------------
-awslocal ecr create-repository --repository-name juice-shop
+aws ecr create-repository --repository-name juice-shop --profile localstack
 
 # Note the repositoryUri from output:
 # 000000000000.dkr.ecr.us-east-1.localhost.localstack.cloud:4566/juice-shop
@@ -90,7 +121,7 @@ docker push \
 
 Step 4: Create ECS Cluster
 ---------------------------
-awslocal ecs create-cluster --cluster-name juice-shop-cluster
+aws ecs create-cluster --cluster-name juice-shop-cluster --profile localstack
 
 Step 5: Create Task Definition
 -------------------------------
@@ -115,19 +146,20 @@ Step 5: Create Task Definition
 }
 
 # Register
-awslocal ecs register-task-definition --cli-input-json file://juice-shop-task.json
+aws ecs register-task-definition --cli-input-json file://juice-shop-task.json --profile localstack
 
 Step 6: Run Task
 ----------------
 # Get subnet ID
-awslocal ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text
+aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text --profile localstack
 
 # Run task (replace subnet-xxxxx with actual subnet ID)
-awslocal ecs run-task \
+aws ecs run-task \
   --cluster juice-shop-cluster \
   --task-definition juice-shop \
   --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxx],assignPublicIp=ENABLED}"
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxx],assignPublicIp=ENABLED}" \
+  --profile localstack
 
 Step 7: Access Juice Shop
 --------------------------
@@ -200,21 +232,21 @@ MONITORING
 curl http://localhost:4566/_localstack/health | jq
 
 # List tasks
-awslocal ecs list-tasks --cluster juice-shop-cluster
+aws ecs list-tasks --cluster juice-shop-cluster --profile localstack
 
 # View task details
-awslocal ecs describe-tasks --cluster juice-shop-cluster --tasks <task-arn>
+aws ecs describe-tasks --cluster juice-shop-cluster --tasks <task-arn> --profile localstack
 
 CLEANUP
 =====
 # Stop task
-awslocal ecs stop-task --cluster juice-shop-cluster --task <task-id>
+aws ecs stop-task --cluster juice-shop-cluster --task <task-id> --profile localstack
 
 # Delete cluster
-awslocal ecs delete-cluster --cluster juice-shop-cluster
+aws ecs delete-cluster --cluster juice-shop-cluster --profile localstack
 
 # Delete repository
-awslocal ecr delete-repository --repository-name juice-shop --force
+aws ecr delete-repository --repository-name juice-shop --force --profile localstack
 
 # Nuclear option (reset everything)
 localstack stop
@@ -246,12 +278,23 @@ localstack start -d
 Issue: Task stays PENDING
 --------------------------
 # Check task errors:
-awslocal ecs describe-tasks --cluster juice-shop-cluster --tasks <task-arn>
+aws ecs describe-tasks --cluster juice-shop-cluster --tasks <task-arn> --profile localstack
 
 # Common fixes:
-- Verify subnet exists: awslocal ec2 describe-subnets
+- Verify subnet exists: aws ec2 describe-subnets --profile localstack
 - Use correct image URI
 - Reduce CPU/memory in task definition
+
+Issue: AWS profile not working
+-------------------------------
+# Verify profile configuration:
+cat ~/.aws/config
+cat ~/.aws/credentials
+
+# Test profile:
+aws s3 ls --profile localstack
+
+# Re-configure if needed (see Step 4 in SETUP section)
 
 COST COMPARISON
 =====
@@ -285,7 +328,7 @@ WHAT'S NEW IN v4.10
 ✓ S3 Tables - Apache Iceberg support for data lakehouse
 ⚠ Python 3.9 deprecated - Use Python 3.10+
 
-QUICK REFERENCE
+QUICK REFERENCE (TESTED COMMANDS)
 =====
 # LocalStack control
 localstack start -d | stop | restart | status | logs -f
@@ -293,16 +336,23 @@ localstack start -d | stop | restart | status | logs -f
 # Health check
 curl http://localhost:4566/_localstack/health | jq
 
+# S3 (testing)
+aws s3 ls --profile localstack
+aws s3 mb s3://bucket-name --profile localstack
+
 # ECR
-awslocal ecr create-repository --repository-name juice-shop
-awslocal ecr describe-repositories
+aws ecr create-repository --repository-name juice-shop --profile localstack
+aws ecr describe-repositories --profile localstack
 
 # ECS
-awslocal ecs create-cluster --cluster-name juice-shop-cluster
-awslocal ecs list-clusters
-awslocal ecs register-task-definition --cli-input-json file://task.json
-awslocal ecs run-task --cluster juice-shop-cluster --task-definition juice-shop
-awslocal ecs list-tasks --cluster juice-shop-cluster
-awslocal ecs stop-task --cluster juice-shop-cluster --task <task-arn>
+aws ecs create-cluster --cluster-name juice-shop-cluster --profile localstack
+aws ecs list-clusters --profile localstack
+aws ecs register-task-definition --cli-input-json file://task.json --profile localstack
+aws ecs run-task --cluster juice-shop-cluster --task-definition juice-shop --profile localstack
+aws ecs list-tasks --cluster juice-shop-cluster --profile localstack
+aws ecs stop-task --cluster juice-shop-cluster --task <task-arn> --profile localstack
+
+# EC2 (for subnet info)
+aws ec2 describe-subnets --profile localstack
 
 ================================================================================

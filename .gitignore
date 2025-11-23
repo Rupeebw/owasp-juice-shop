@@ -66,6 +66,8 @@ config/*.yml
 # System Files
 .DS_Store
 
+# Local setup files (may contain sensitive info)
+docs/LocalStack/
 
 /Users/rupeshpanwar/Documents/AI-Projects/owasp-juice-shop/docs/DEVSECOPS_TRAINING_AGENDA.txt
 

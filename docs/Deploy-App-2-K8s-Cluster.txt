@@ -146,16 +146,49 @@ Stage 5: Deploy to Kubernetes (NEW!)
   - Runs on: self-hosted runner
   - Depends on: push-to-dockerhub
   - Steps:
-    1. Verify kubectl connectivity
-    2. Apply K8s manifests
-    3. Update deployment with commit-sha tag
-    4. Wait for rollout (180s timeout)
-    5. Verify deployment
-    6. Display access URL
+    1. Checkout code
+    2. Install kubectl (if not present on runner)
+    3. Verify kubectl connectivity
+    4. Apply K8s manifests
+    5. Update deployment with commit-sha tag
+    6. Wait for rollout (180s timeout)
+    7. Verify deployment
+    8. Display access URL
+
+**Self-Hosted Runner Requirements:**
+  - kubectl: Auto-installed by pipeline if missing
+  - kubeconfig: Must be configured for target cluster
+  - Docker: Required for image operations
+  - Permissions: sudo access for kubectl installation
+
+**kubectl Auto-Installation:**
+  The pipeline automatically checks for kubectl and installs it if not found:
+  - Downloads latest stable kubectl from official releases
+  - Installs to /usr/local/bin/
+  - Verifies installation before proceeding
+  - Prevents "kubectl: command not found" errors (exit code 127)
 
 ================================================================================
 TROUBLESHOOTING
 ================================================================================
+
+**Problem: Pipeline fails with "kubectl: command not found" (Exit Code 127)**
+
+Cause:
+  Self-hosted runner doesn't have kubectl installed
+
+Solution:
+  Pipeline now auto-installs kubectl if missing. This fix is already applied.
+
+Manual verification:
+  ssh into runner machine:
+    which kubectl
+    kubectl version --client
+
+Manual installation (if needed):
+  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  chmod +x kubectl
+  sudo mv kubectl /usr/local/bin/
 
 **Problem: Can't access http://localhost:30080**
 
@@ -185,6 +218,209 @@ Verify image:
 
 Fix:
   kubectl rollout restart deployment/juice-shop
+
+**Problem: Pipeline deploy stage fails immediately**
+
+Common causes and solutions:
+
+1. kubectl not installed (Exit Code 127)
+   - Fixed automatically by pipeline kubectl installation step
+   - Verify: Check "Install kubectl" step in pipeline logs
+
+2. kubeconfig not configured
+   - Runner can't connect to cluster
+   - Fix: Copy ~/.kube/config to runner machine
+   - Verify: Run kubectl cluster-info on runner
+
+3. Insufficient permissions
+   - Runner can't install kubectl (needs sudo)
+   - Fix: Add runner user to sudoers or install kubectl manually
+   - Verify: Test sudo access on runner
+
+4. Wrong cluster context
+   - Runner connecting to different cluster
+   - Fix: kubectl config use-context kind-devsecops-cluster
+   - Verify: kubectl config current-context
+
+**Problem: Deployment succeeds but NodePort not accessible**
+
+This is a Kind-specific issue with port mappings.
+
+Diagnosis:
+  1. Check Kind config ports:
+     cat kind-k8s-cluster/kind-cluster-config.yaml | grep containerPort
+
+  2. Check Docker port mappings:
+     docker ps --filter name=devsecops-cluster-control-plane
+
+  3. Check service NodePort:
+     kubectl get svc juice-shop
+
+Solution:
+  NodePort MUST match one of the Kind extraPortMappings.
+  For this setup: Use 30080 or 30443 only (not 30000!)
+
+Fix:
+  Edit kind-k8s-cluster/juice-shop-service.yaml:
+    nodePort: 30080  # Must match Kind config!
+
+  Apply changes:
+    kubectl apply -f kind-k8s-cluster/juice-shop-service.yaml
+
+================================================================================
+PIPELINE FLOW DIAGRAM
+================================================================================
+
+Complete CI/CD Flow:
+
+  1. Developer pushes code to main branch
+     ↓
+  2. GitHub Actions triggered
+     ↓
+  3. Stage 1: Lint Code
+     - Install dependencies (npm install --ignore-scripts)
+     - Run linter (npm run lint)
+     - Continue on error (training mode)
+     ↓
+  4. Stage 2: Run Tests
+     - Install dependencies (npm install)
+     - Run unit tests (npm test)
+     - Continue on error (training mode)
+     ↓
+  5. Stage 3: Build & Tag Docker Image
+     - Build Docker image (juice-shop:latest)
+     - Tag with commit SHA and 'simple'
+     - Save as artifact for next stage
+     ↓
+  6. Stage 4: Push to Docker Hub
+     - Download Docker image artifact
+     - Load image
+     - Authenticate with Docker Hub
+     - Tag for Docker Hub (rupeedev/owasp-juice-shop)
+     - Push all tags (latest, commit-sha, simple)
+     ↓
+  7. Stage 5: Deploy to Kubernetes (NEW!)
+     - Install kubectl (if not present)
+     - Verify kubectl connectivity
+     - Apply K8s manifests
+     - Update deployment image to commit-sha
+     - Wait for rollout completion
+     - Verify deployment status
+     - Show access URL
+     ↓
+  8. Application accessible at http://localhost:30080
+
+**Key Pipeline Features:**
+  - Sequential execution (each stage depends on previous)
+  - Artifact passing (Docker image from build to push)
+  - Auto-installation (kubectl on self-hosted runner)
+  - Zero-downtime deployment (rolling update strategy)
+  - Automatic rollback (if health checks fail)
+  - Training mode (continue-on-error for lint/test)
+
+================================================================================
+BEST PRACTICES
+================================================================================
+
+**For Production Deployments:**
+
+1. Increase Replicas for High Availability
+   - Minimum 2 replicas (better: 3)
+   - Edit juice-shop-deployment.yaml: replicas: 3
+   - Apply: kubectl apply -f kind-k8s-cluster/juice-shop-deployment.yaml
+
+2. Use Specific Image Tags (Not :latest)
+   - Pipeline already uses commit-sha for deployments
+   - Latest is for development only
+   - Allows easy rollback to previous versions
+
+3. Configure Resource Limits Appropriately
+   - Monitor actual resource usage
+   - Adjust based on load testing
+   - Use Horizontal Pod Autoscaler for auto-scaling
+
+4. Add Ingress for Production
+   - NodePort is for development/testing
+   - Use Ingress with TLS/SSL certificates
+   - Configure domain name and DNS
+
+5. Implement Monitoring and Alerting
+   - Add Prometheus metrics
+   - Set up Grafana dashboards
+   - Configure alerts for pod failures
+
+6. Use Secrets Management
+   - Don't commit secrets to git
+   - Use Kubernetes Secrets or external solutions
+   - Rotate credentials regularly
+
+**For Self-Hosted Runners:**
+
+1. Keep kubectl Updated
+   - Pipeline installs latest stable version
+   - Update manually if needed: kubectl version
+
+2. Secure kubeconfig
+   - Restrict permissions: chmod 600 ~/.kube/config
+   - Use separate service account for CI/CD
+   - Limit RBAC permissions
+
+3. Monitor Runner Resources
+   - Ensure sufficient disk space for Docker images
+   - Monitor CPU/memory usage during builds
+   - Clean up old Docker images periodically
+
+4. Regular Maintenance
+   - Update runner software
+   - Prune Docker system: docker system prune
+   - Review runner logs for issues
+
+================================================================================
+ADDITIONAL RESOURCES
+================================================================================
+
+**GitHub Repository:**
+  https://github.com/rupeedev/owasp-juice-shop
+
+**Pipeline Configuration:**
+  .github/workflows/simple-pipeline.yml
+
+**Kubernetes Manifests:**
+  kind-k8s-cluster/juice-shop-deployment.yaml
+  kind-k8s-cluster/juice-shop-service.yaml
+  kind-k8s-cluster/kind-cluster-config.yaml
+
+**Docker Hub:**
+  https://hub.docker.com/r/rupeedev/owasp-juice-shop
+
+**Kind Documentation:**
+  https://kind.sigs.k8s.io/
+  https://kind.sigs.k8s.io/docs/user/configuration/#extra-port-mappings
+
+**kubectl Installation:**
+  https://kubernetes.io/docs/tasks/tools/
+
+================================================================================
+CHANGE LOG
+================================================================================
+
+**v1.1 - kubectl Auto-Installation Fix**
+  Date: 2025-11-24
+  - Added automatic kubectl installation for self-hosted runners
+  - Prevents "kubectl: command not found" pipeline failures
+  - Downloads latest stable kubectl from official releases
+  - Installs to /usr/local/bin/ with proper permissions
+  - Updated documentation with troubleshooting steps
+  - Commit: 6f9a8ec
+
+**v1.0 - Initial Kubernetes Deployment**
+  Date: 2025-11-24
+  - Created Kubernetes deployment and service manifests
+  - Extended GitHub Actions pipeline with deploy stage
+  - Configured Kind cluster with multi-node setup
+  - Set up self-hosted runner for local deployments
+  - Created comprehensive documentation
+  - Commit: 21ddf0f
 
 ================================================================================
 END OF DOCUMENTATION

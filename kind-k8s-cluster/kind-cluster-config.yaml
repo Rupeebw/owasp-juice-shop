@@ -1,0 +1,54 @@
+# Kind cluster configuration
+# 1 control plane + 2 worker nodes
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: devsecops-cluster
+
+nodes:
+  # Control plane node
+  - role: control-plane
+    image: kindest/node:v1.27.3
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "node-role=control-plane"
+    extraPortMappings:
+      # Map localhost:30080 to NodePort 30080 (for app access)
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+      # Map localhost:30443 to NodePort 30443 (for HTTPS)
+      - containerPort: 30443
+        hostPort: 30443
+        protocol: TCP
+
+  # Worker node 1
+  - role: worker
+    image: kindest/node:v1.27.3
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "node-role=worker,worker-id=1"
+
+  # Worker node 2
+  - role: worker
+    image: kindest/node:v1.27.3
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "node-role=worker,worker-id=2"
+
+# Networking configuration
+networking:
+  # Use default Kind networking
+  disableDefaultCNI: false
+  # Pod subnet
+  podSubnet: "10.244.0.0/16"
+  # Service subnet
+  serviceSubnet: "10.96.0.0/12"

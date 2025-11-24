@@ -1,0 +1,191 @@
+================================================================================
+KUBERNETES DEPLOYMENT GUIDE - JUICE SHOP
+================================================================================
+
+TL;DR
+=====
+OWASP Juice Shop is now deployed to Kubernetes with automated CI/CD pipeline.
+
+**Quick Access:**
+  URL: http://localhost:30080
+  NodePort: 30080 (mapped to container port 3000)
+
+**Pipeline Stages:**
+  Lint → Test → Build → Push to Docker Hub → Deploy to K8s
+
+**Key Files:**
+  - kind-k8s-cluster/juice-shop-deployment.yaml (Pod configuration)
+  - kind-k8s-cluster/juice-shop-service.yaml (Service/networking)
+  - .github/workflows/simple-pipeline.yml (CI/CD pipeline)
+
+================================================================================
+AUTO-DETECTED CONFIGURATION
+================================================================================
+
+The deployment was intelligently configured by analyzing:
+
+✅ GitHub Actions Workflow Analysis
+   - Workflow: .github/workflows/simple-pipeline.yml
+   - Docker Hub: rupeedev/owasp-juice-shop
+   - Image tags: latest, <commit-sha>, simple
+   - Pipeline: lint → test → build → push-to-dockerhub
+
+✅ Application Configuration
+   - Port: 3000 (from Dockerfile EXPOSE)
+   - Type: Node.js 22 application
+   - Base image: gcr.io/distroless/nodejs22-debian12
+
+✅ Kubernetes Cluster Detection
+   - Cluster: devsecops-cluster (Kind)
+   - Context: kind-devsecops-cluster
+   - Nodes: 1 control-plane + 2 workers
+   - Mapped ports: 30080, 30443 (from kind-cluster-config.yaml)
+
+================================================================================
+DEPLOYMENT CONFIGURATION
+================================================================================
+
+**Deployment Specifications:**
+  - Replicas: 1 (dev/testing environment)
+  - Image: rupeedev/owasp-juice-shop:latest
+  - Pull Policy: Always (ensures latest image is used)
+  - Container Port: 3000
+  - Service Type: NodePort
+  - NodePort: 30080 (mapped to localhost via Kind)
+
+**Resource Limits:**
+  Requests:
+    - CPU: 250m (0.25 cores)
+    - Memory: 256Mi
+  Limits:
+    - CPU: 500m (0.5 cores)
+    - Memory: 512Mi
+
+**Health Checks:**
+  Liveness Probe:
+    - Path: / (HTTP GET)
+    - Initial delay: 30s
+    - Period: 10s
+    - Timeout: 5s
+    - Failure threshold: 3
+
+  Readiness Probe:
+    - Path: / (HTTP GET)
+    - Initial delay: 10s
+    - Period: 5s
+    - Timeout: 3s
+    - Failure threshold: 3
+
+================================================================================
+ACCESSING THE APPLICATION
+================================================================================
+
+**Primary Access Method:**
+  URL: http://localhost:30080
+
+  This works because:
+  1. Kind cluster maps control-plane port 30080 → localhost:30080
+  2. Service NodePort routes 30080 → pod port 3000
+  3. Application listens on port 3000 inside container
+
+**Verification Steps:**
+  1. Check service status:
+     kubectl get svc juice-shop
+
+  2. Check pod status:
+     kubectl get pods -l app=juice-shop
+
+  3. Test HTTP connectivity:
+     curl -I http://localhost:30080
+
+  4. Access in browser:
+     Open: http://localhost:30080
+
+================================================================================
+MANAGEMENT COMMANDS
+================================================================================
+
+**View Deployment Status:**
+  kubectl get deployment juice-shop
+  kubectl describe deployment juice-shop
+  kubectl rollout status deployment/juice-shop
+
+**View Pod Details:**
+  kubectl get pods -l app=juice-shop
+  kubectl logs -l app=juice-shop
+  kubectl logs -l app=juice-shop --follow (real-time)
+
+**Scale Deployment:**
+  kubectl scale deployment juice-shop --replicas=2
+  kubectl get pods -l app=juice-shop
+
+**Update Image:**
+  kubectl set image deployment/juice-shop \
+    juice-shop=rupeedev/owasp-juice-shop:latest
+  kubectl rollout status deployment/juice-shop
+
+**Restart Deployment:**
+  kubectl rollout restart deployment/juice-shop
+
+**Delete Deployment:**
+  kubectl delete deployment,svc juice-shop
+
+================================================================================
+GITHUB ACTIONS CI/CD PIPELINE
+================================================================================
+
+**5-Stage Automated Pipeline:**
+
+Stage 1: Lint Code
+Stage 2: Run Tests
+Stage 3: Build & Tag Docker Image
+Stage 4: Push to Docker Hub
+Stage 5: Deploy to Kubernetes (NEW!)
+
+**Deploy Stage Details:**
+  - Runs on: self-hosted runner
+  - Depends on: push-to-dockerhub
+  - Steps:
+    1. Verify kubectl connectivity
+    2. Apply K8s manifests
+    3. Update deployment with commit-sha tag
+    4. Wait for rollout (180s timeout)
+    5. Verify deployment
+    6. Display access URL
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+**Problem: Can't access http://localhost:30080**
+
+Check Kind port mapping:
+  docker ps --filter name=devsecops-cluster-control-plane
+
+Check service:
+  kubectl get svc juice-shop
+
+Check pod:
+  kubectl get pods -l app=juice-shop
+
+**Problem: Pod is CrashLoopBackOff**
+
+Check logs:
+  kubectl logs -l app=juice-shop
+
+Common fixes:
+  - Increase resource limits
+  - Check image pull status
+  - Verify application startup
+
+**Problem: ImagePullBackOff**
+
+Verify image:
+  docker pull rupeedev/owasp-juice-shop:latest
+
+Fix:
+  kubectl rollout restart deployment/juice-shop
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

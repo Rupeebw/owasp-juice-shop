@@ -16,7 +16,11 @@ ALWAYS refer below documents while working on this application
 2. /docs/AWS_DEPLOYMENT_PLAN_ECS.txt
 3. /docs/DEVSECOPS_TRAINING_WITH_JUICE_SHOP.txt
 4. /docs/FRONTEND_BACKEND_DATABASE_FLOW.txt
-5. /docs/LOCALSTACK_DEPLOYMENT_GUIDE.txt
+5. /docs/GIT_WORKFLOW_SLASH_COMMAND_MANUAL.txt
+6. /docs/LOCALSTACK_DEPLOYMENT_GUIDE.txt
+7. /docs/LocalStack/localStack-Setup.txt
+8. /docs/LocalStack/localStack-Slash.txt
+9. /docs/devsecops-practice-summary.txt
 
 ## Git Commit Guidelines
 

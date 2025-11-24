@@ -48,6 +48,13 @@ assets/
 
 # Custom configuration files
 config/*.yml
+
+# Secrets and credentials (NEVER COMMIT!)
+docs/docker/pat.txt
+*.pat
+*secret*.txt
+credentials.json
+.env.local
 !config/addo.yml
 !config/bodgeit.yml
 !config/ctf.yml
@@ -75,3 +82,7 @@ DEVSECOPS_TRAINING_AGENDA.txt
 docs/DEVSECOPS_TRAINING_WITH_JUICE_SHOP.txt
 
 /Users/rupeshpanwar/Documents/AI-Projects/owasp-juice-shop/docs/docker/pat.txt
+
+# GitHub PAT and secrets
+.env
+kind-k8s-cluster/.env

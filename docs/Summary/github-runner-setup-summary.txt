@@ -1,0 +1,270 @@
+================================================================================
+GitHub Actions Self-Hosted Runner in Kind Kubernetes Cluster
+================================================================================
+
+TL;DR
+=====
+Successfully deployed a GitHub Actions self-hosted runner pod in your Kind
+Kubernetes cluster. The runner is registered with your GitHub repository and
+ready to execute workflow jobs.
+
+DEPLOYMENT SUMMARY
+==================
+✅ Kubernetes Secret: github-runner-secret (GitHub credentials)
+✅ ServiceAccount: github-runner (pod identity)
+✅ ClusterRole: github-runner (deployment permissions)
+✅ ClusterRoleBinding: github-runner (RBAC binding)
+✅ Deployment: github-runner (1 replica)
+✅ Runner Registration: Connected to GitHub
+
+RUNNER DETAILS
+==============
+Name: kind-cluster-runner
+Status: Running (1/1 pods ready)
+Labels: self-hosted, kind-cluster, local
+Repository: https://github.com/rupeedev/owasp-juice-shop
+GitHub UI: https://github.com/rupeedev/owasp-juice-shop/settings/actions/runners
+
+KUBERNETES RESOURCES
+====================
+Namespace: default
+Pod: github-runner-67d46b6bbd-xxxxx
+Image: myoung34/github-runner:latest
+Resources:
+  - CPU Request: 100m
+  - Memory Request: 256Mi
+  - CPU Limit: 500m
+  - Memory Limit: 512Mi
+
+RUNNER CAPABILITIES
+===================
+✅ kubectl access (via ServiceAccount)
+✅ Full control over deployments, pods, services
+✅ Can read/write configmaps and secrets
+✅ Can view cluster nodes and namespaces
+✅ Ephemeral mode (auto-cleanup on termination)
+
+USING THE RUNNER IN WORKFLOWS
+==============================
+
+In your .github/workflows/*.yml files, use:
+
+```yaml
+jobs:
+  deploy-to-kind:
+    runs-on: self-hosted  # This uses your Kind cluster runner!
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl rollout status deployment/juice-shop
+          kubectl get pods
+
+      - name: Verify deployment
+        run: |
+          kubectl get services
+          kubectl get deployments
+```
+
+EXAMPLE: Full CI/CD Pipeline
+=============================
+
+```yaml
+name: CI/CD Pipeline with Kind Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t rupeedev/owasp-juice-shop:${{ github.sha }} .
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Push to Docker Hub
+        run: docker push rupeedev/owasp-juice-shop:${{ github.sha }}
+
+  deploy-to-kind:
+    needs: build-and-push
+    runs-on: self-hosted  # Runs on Kind cluster runner!
+
+    steps:
+      - name: Update deployment
+        run: |
+          kubectl set image deployment/juice-shop \
+            juice-shop=rupeedev/owasp-juice-shop:${{ github.sha }}
+
+          kubectl rollout status deployment/juice-shop
+
+      - name: Verify deployment
+        run: kubectl get pods -l app=juice-shop
+```
+
+MANAGEMENT COMMANDS
+===================
+
+# View runner logs
+kubectl logs -l app=github-runner -f -n default
+
+# Check runner status
+kubectl get pods -l app=github-runner -n default
+
+# Restart runner
+kubectl rollout restart deployment github-runner -n default
+
+# Scale runner (add more runners)
+kubectl scale deployment github-runner --replicas=2 -n default
+
+# Delete runner
+kubectl delete -f kind-k8s-cluster/github-runner.yaml
+
+# View RBAC permissions
+kubectl describe clusterrole github-runner
+kubectl describe clusterrolebinding github-runner
+
+TROUBLESHOOTING
+===============
+
+Runner Not Appearing in GitHub
+-------------------------------
+1. Check pod status: kubectl get pods -l app=github-runner
+2. View logs: kubectl logs -l app=github-runner
+3. Verify secret: kubectl get secret github-runner-secret
+4. Test secret values:
+   kubectl get secret github-runner-secret -o jsonpath='{.data.GITHUB_PAT}' | base64 -d
+
+Runner Pod CrashLoopBackOff
+----------------------------
+1. Check logs: kubectl logs -l app=github-runner --previous
+2. Verify PAT is valid and has correct scopes (repo, workflow)
+3. Verify repo URL is correct
+4. Restart: kubectl rollout restart deployment github-runner
+
+Workflow Not Running on Runner
+-------------------------------
+1. Ensure workflow uses: runs-on: self-hosted
+2. Check runner is online in GitHub UI
+3. Check runner labels match workflow requirements
+4. View runner logs during workflow execution
+
+Update GitHub PAT (if expired)
+-------------------------------
+# Create new PAT in GitHub
+# Then update the secret:
+
+kubectl delete secret github-runner-secret -n default
+
+kubectl create secret generic github-runner-secret \
+  --from-literal=GITHUB_OWNER="rupeedev" \
+  --from-literal=GITHUB_REPO="owasp-juice-shop" \
+  --from-literal=GITHUB_PAT="new_pat_here" \
+  --namespace=default
+
+# Restart runner to pick up new secret
+kubectl rollout restart deployment github-runner
+
+SECURITY NOTES
+==============
+1. The .env file contains sensitive credentials - never commit it to git
+2. GitHub PAT is stored as a Kubernetes secret (encrypted in etcd)
+3. Runner has elevated permissions to deploy apps - protect access
+4. ServiceAccount credentials are auto-mounted to runner pod
+5. Runner runs in ephemeral mode - auto-removes on termination
+
+FILES CREATED
+=============
+✅ kind-k8s-cluster/.env (gitignored)
+✅ kind-k8s-cluster/github-runner.yaml
+✅ kind-k8s-cluster/github-runner-setup-summary.txt
+
+NEXT STEPS
+==========
+1. ✅ Verify runner appears in GitHub repository settings
+2. Create Kubernetes deployment manifests for Juice Shop
+3. Update GitHub Actions workflow to use self-hosted runner
+4. Test deployment pipeline: git push → GitHub Actions → Kind cluster
+5. Monitor deployments with: kubectl get pods -w
+
+ARCHITECTURE DIAGRAM
+====================
+
+┌─────────────────────────────────────────────────────────┐
+│                  GitHub Repository                      │
+│           github.com/rupeedev/owasp-juice-shop          │
+│                                                         │
+│  .github/workflows/deploy.yml                           │
+│    runs-on: self-hosted ──────────────┐                │
+└───────────────────────────────────────┼─────────────────┘
+                                        │
+                                        │ Webhook/Poll
+                                        ▼
+┌─────────────────────────────────────────────────────────┐
+│              Kind Kubernetes Cluster                    │
+│          (Local on Docker Desktop)                      │
+│                                                         │
+│  ┌────────────────────────────────────────────┐        │
+│  │  Namespace: default                        │        │
+│  │                                            │        │
+│  │  ┌──────────────────────────────────┐     │        │
+│  │  │  GitHub Runner Pod               │     │        │
+│  │  │  - Listens for jobs              │     │        │
+│  │  │  - Has kubectl access            │     │        │
+│  │  │  - Can deploy apps               │     │        │
+│  │  └──────────────┬───────────────────┘     │        │
+│  │                 │                          │        │
+│  │                 │ kubectl commands         │        │
+│  │                 ▼                          │        │
+│  │  ┌──────────────────────────────────┐     │        │
+│  │  │  Your Application Deployments    │     │        │
+│  │  │  - juice-shop                    │     │        │
+│  │  │  - Other services                │     │        │
+│  │  └──────────────────────────────────┘     │        │
+│  │                                            │        │
+│  └────────────────────────────────────────────┘        │
+│                                                         │
+│  3 Nodes: 1 control-plane + 2 workers                  │
+└─────────────────────────────────────────────────────────┘
+
+WORKFLOW FLOW
+=============
+1. Developer pushes code to GitHub
+2. GitHub Actions workflow triggered
+3. Workflow job assigned to self-hosted runner
+4. Runner pod in Kind cluster picks up the job
+5. Runner executes deployment commands (kubectl apply)
+6. App deployed to same Kind cluster
+7. Runner reports status back to GitHub
+
+BENEFITS OF THIS SETUP
+=======================
+✅ Zero cloud costs (runs locally)
+✅ Fast deployment (no external network latency)
+✅ Full control over runner environment
+✅ Test CI/CD pipelines before cloud deployment
+✅ Learn Kubernetes and GitHub Actions together
+✅ Perfect for DevSecOps training
+
+REFERENCES
+==========
+- GitHub Actions Runners: https://docs.github.com/en/actions/hosting-your-own-runners
+- myoung34/github-runner: https://github.com/myoung34/docker-github-actions-runner
+- Kind Documentation: https://kind.sigs.k8s.io/
+- Kubernetes RBAC: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+
+================================================================================
+Setup completed successfully! Your Kind cluster is now a CI/CD powerhouse! 🚀
+================================================================================

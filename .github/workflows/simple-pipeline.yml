@@ -175,7 +175,7 @@ jobs:
 
       - name: Success message
         run: |
-          echo "🎉 Pipeline completed successfully! All 4 stages GREEN!"
+          echo "🎉 Docker Hub push completed!"
           echo "📦 Docker image built and pushed to Docker Hub"
           echo "🌐 View at: https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}"
           echo ""
@@ -183,3 +183,76 @@ jobs:
           echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest"
           echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ github.sha }}"
           echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:simple"
+
+  # Stage 5: Deploy to Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: self-hosted
+    needs: push-to-dockerhub  # Only run if push stage completes
+    env:
+      DOCKER_USERNAME: rupeedev
+      DOCKER_REPO: owasp-juice-shop
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify kubectl access
+        run: |
+          echo "🔍 Verifying kubectl connectivity to cluster..."
+          kubectl cluster-info
+          kubectl get nodes
+          echo "✅ kubectl is configured and cluster is accessible"
+
+      - name: Apply Kubernetes manifests
+        run: |
+          echo "📝 Applying Kubernetes manifests..."
+          kubectl apply -f kind-k8s-cluster/juice-shop-deployment.yaml
+          kubectl apply -f kind-k8s-cluster/juice-shop-service.yaml
+          echo "✅ Manifests applied successfully"
+
+      - name: Update deployment image
+        run: |
+          echo "🔄 Updating deployment with new image..."
+          kubectl set image deployment/juice-shop \
+            juice-shop=${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ github.sha }}
+          echo "✅ Deployment image updated to ${{ github.sha }}"
+
+      - name: Wait for rollout
+        run: |
+          echo "⏳ Waiting for deployment rollout to complete..."
+          kubectl rollout status deployment/juice-shop --timeout=180s
+          echo "✅ Rollout completed successfully"
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment status..."
+          echo ""
+          echo "📦 Pods:"
+          kubectl get pods -l app=juice-shop
+          echo ""
+          echo "🌐 Service:"
+          kubectl get svc juice-shop
+          echo ""
+          echo "📊 Deployment:"
+          kubectl get deployment juice-shop
+
+      - name: Get access information
+        run: |
+          echo "✅ Deployment successful!"
+          echo ""
+          echo "🌐 Access the application at:"
+          echo "   http://localhost:30080"
+          echo ""
+          echo "📋 Useful commands:"
+          echo "   kubectl get pods -l app=juice-shop"
+          echo "   kubectl logs -l app=juice-shop"
+          echo "   kubectl describe deployment juice-shop"
+
+      - name: Success message
+        run: |
+          echo "🎉 Pipeline completed successfully! All 5 stages GREEN!"
+          echo "✅ Lint → Test → Build → Push → Deploy"
+          echo ""
+          echo "📦 Application deployed to Kubernetes"
+          echo "🌐 Access at: http://localhost:30080"

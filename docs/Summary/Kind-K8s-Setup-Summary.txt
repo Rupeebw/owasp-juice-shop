@@ -1,0 +1,199 @@
+================================================================================
+KIND K8S CLUSTER SETUP - SESSION SUMMARY
+================================================================================
+
+TL;DR
+=====
+Created /kind-k8s-setup slash command for local Kubernetes cluster setup.
+3-node cluster (1 control plane + 2 workers) running on local machine via Kind.
+Kube-ops-view deployed for visual cluster monitoring at http://localhost:8080.
+All K8s manifests organized in kind-k8s-cluster/ directory.
+Ready to deploy Juice Shop from Docker Hub to local K8s cluster.
+
+QUICK START
+===========
+Run the setup:
+  /kind-k8s-setup
+
+Access Kube-ops-view dashboard:
+  http://localhost:8080
+
+Deploy Juice Shop to cluster:
+  kubectl create deployment juice-shop --image=rupeedev/owasp-juice-shop:latest
+  kubectl expose deployment juice-shop --type=NodePort --port=3000
+  kubectl get service juice-shop -o jsonpath='{.spec.ports[0].nodePort}'
+
+WHAT WAS CREATED
+================
+Slash Command:
+  - Location: /Users/rupeshpanwar/.claude/commands/kind-k8s-setup.md
+  - 9-step automated setup flow
+  - Multi-platform support: macOS, Linux, Windows, WSL
+  - Estimated time: 15-20 minutes
+
+Kubernetes Cluster:
+  - Name: devsecops-cluster
+  - Version: v1.27.3
+  - Nodes: 1 control plane + 2 workers (3 total)
+  - Port mappings: localhost:30080 (HTTP), localhost:30443 (HTTPS)
+
+Monitoring:
+  - Kube-ops-view deployed and running
+  - Web UI: http://localhost:8080
+  - Real-time cluster visualization
+  - Port forwarding PID: 78691
+
+File Organization:
+  kind-k8s-cluster/
+  ├── kind-cluster-config.yaml    # Cluster configuration
+  ├── kube-ops-view.yaml          # Monitoring tool manifest
+  └── kind-cluster-info.txt       # Quick reference guide
+
+CLUSTER MANAGEMENT COMMANDS
+===========================
+View cluster:
+  kind get clusters
+  kubectl cluster-info
+  kubectl get nodes -o wide
+
+Deploy application:
+  kubectl create deployment <name> --image=<image>
+  kubectl expose deployment <name> --type=NodePort --port=<port>
+
+Check status:
+  kubectl get deployments
+  kubectl get pods -o wide
+  kubectl get services
+
+Scale deployment:
+  kubectl scale deployment <name> --replicas=3
+
+View logs:
+  kubectl logs -l app=<name>
+
+Delete resources:
+  kubectl delete deployment <name>
+  kubectl delete service <name>
+
+Cluster lifecycle:
+  kind delete cluster --name devsecops-cluster
+  kind create cluster --config kind-k8s-cluster/kind-cluster-config.yaml
+
+KUBE-OPS-VIEW CONTROL
+=====================
+Access dashboard:
+  http://localhost:8080
+
+Stop port forwarding:
+  kill 78691
+
+Restart port forwarding:
+  kubectl port-forward service/kube-ops-view 8080:80
+
+Check Kube-ops-view status:
+  kubectl get deployment kube-ops-view
+  kubectl get pods -l app=kube-ops-view
+  kubectl get service kube-ops-view
+
+TRAINING FLOW PROGRESS
+======================
+Part 3a: Basic 3-stage pipeline
+  ✅ Status: Completed
+  ✅ Stages: Lint → Test → Build
+
+Part 3b: Docker Hub push
+  ✅ Status: Completed
+  ✅ Command: /simple-pipeline-setup
+  ✅ Images: https://hub.docker.com/r/rupeedev/owasp-juice-shop
+
+Part 3c: Local K8s with Kind
+  ✅ Status: Completed
+  ✅ Command: /kind-k8s-setup
+  ✅ Cluster: devsecops-cluster running
+
+DEPLOYMENT ARCHITECTURE
+=======================
+GitHub Actions Pipeline
+         ↓
+    Docker Hub
+  (Image Registry)
+         ↓
+Kind Cluster (Local K8s)
+1 Control Plane + 2 Workers
+         ↓
+  Juice Shop Running
+(http://localhost:{nodeport})
+
+NEXT STEPS
+==========
+1. Open Kube-ops-view: http://localhost:8080
+2. Deploy Juice Shop from Docker Hub to Kind cluster
+3. Practice scaling and updating deployments
+4. Create K8s manifests (YAML files) for Deployment + Service
+5. Prepare for cloud deployment (same concepts for AWS EKS)
+
+COMMON OPERATIONS
+=================
+Deploy Juice Shop:
+  kubectl create deployment juice-shop --image=rupeedev/owasp-juice-shop:latest
+  kubectl expose deployment juice-shop --type=NodePort --port=3000 --target-port=3000
+
+Check deployment:
+  kubectl get all -l app=juice-shop
+
+Get access URL:
+  NODE_PORT=$(kubectl get service juice-shop -o jsonpath='{.spec.ports[0].nodePort}')
+  echo "Access at: http://localhost:$NODE_PORT"
+
+Update image:
+  kubectl set image deployment/juice-shop juice-shop=rupeedev/owasp-juice-shop:simple
+
+Scale replicas:
+  kubectl scale deployment juice-shop --replicas=3
+
+Clean up:
+  kubectl delete deployment juice-shop
+  kubectl delete service juice-shop
+
+TROUBLESHOOTING
+===============
+Port forwarding not working:
+  lsof -i :8080
+  kubectl port-forward service/kube-ops-view 8080:80
+
+Cluster not responding:
+  kubectl cluster-info
+  docker ps --filter "name=devsecops-cluster"
+  kubectl config use-context kind-devsecops-cluster
+
+Application not accessible:
+  kubectl get pods
+  kubectl describe pod <pod-name>
+  kubectl logs <pod-name>
+  kubectl get events --sort-by='.lastTimestamp'
+
+Recreate cluster:
+  kind delete cluster --name devsecops-cluster
+  kind create cluster --config kind-k8s-cluster/kind-cluster-config.yaml
+
+KEY BENEFITS
+============
+- Zero cloud costs (100% local development)
+- Production-like K8s environment on laptop
+- Fast setup/teardown for testing
+- Visual monitoring with Kube-ops-view
+- Perfect for DevSecOps training
+- Organized manifest files in kind-k8s-cluster/
+- Ready for cloud deployment migration
+
+RESOURCES
+=========
+Files: kind-k8s-cluster/kind-cluster-info.txt (complete reference)
+Kube-ops-view: http://localhost:8080
+Docker Hub: https://hub.docker.com/r/rupeedev/owasp-juice-shop
+Kind Docs: https://kind.sigs.k8s.io/
+
+================================================================================
+END OF SUMMARY
+================================================================================
+

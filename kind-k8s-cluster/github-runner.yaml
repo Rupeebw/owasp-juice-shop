@@ -1,0 +1,97 @@
+---
+# ServiceAccount for the runner pod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-runner
+  namespace: default
+---
+# ClusterRole with permissions to deploy applications
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-runner
+rules:
+  # Full access to deployments, pods, services
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Access to view nodes and namespaces
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  # Access to rollout status
+  - apiGroups: ["apps"]
+    resources: ["deployments/status"]
+    verbs: ["get", "watch"]
+---
+# ClusterRoleBinding to grant permissions to ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: github-runner
+subjects:
+  - kind: ServiceAccount
+    name: github-runner
+    namespace: default
+---
+# Deployment for GitHub Actions Runner
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: default
+  labels:
+    app: github-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      serviceAccountName: github-runner
+      containers:
+      - name: runner
+        image: myoung34/github-runner:latest
+        env:
+          # GitHub repository URL (fully constructed)
+          - name: REPO_URL
+            value: "https://github.com/rupeedev/owasp-juice-shop"
+          # GitHub PAT from secret
+          - name: ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-runner-secret
+                key: GITHUB_PAT
+          # Runner name (appears in GitHub UI)
+          - name: RUNNER_NAME
+            value: "kind-cluster-runner"
+          # Runner labels (used in runs-on)
+          - name: LABELS
+            value: "self-hosted,kind-cluster,local"
+          # Auto-remove runner on pod termination
+          - name: EPHEMERAL
+            value: "true"
+          # Don't run as root
+          - name: RUNNER_WORKDIR
+            value: "/tmp/runner"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      # Restart policy
+      restartPolicy: Always

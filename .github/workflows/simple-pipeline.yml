@@ -87,5 +87,99 @@ jobs:
       - name: List Docker images
         run: docker images | grep juice-shop
 
+      - name: Save Docker image as artifact
+        run: |
+          docker save juice-shop:latest -o juice-shop-image.tar
+          echo "💾 Docker image saved as artifact"
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: juice-shop-image.tar
+          retention-days: 1  # Keep artifact for 1 day only
+
       - name: Success message
-        run: echo "🎉 Pipeline completed successfully! All stages GREEN!"
+        run: echo "🎉 Build stage completed! Docker image saved for deployment."
+
+  # Stage 4: Push to Docker Hub
+  push-to-dockerhub:
+    name: Push to Docker Hub
+    runs-on: ubuntu-latest
+    needs: build  # Only run if build stage completes
+    env:
+      DOCKER_USERNAME: rupeedev
+      DOCKER_REPO: owasp-juice-shop
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: |
+          docker load -i juice-shop-image.tar
+          echo "✅ Docker image loaded"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tag image for Docker Hub
+        run: |
+          DOCKER_USERNAME="${{ env.DOCKER_USERNAME }}"
+          DOCKER_REPO="${{ env.DOCKER_REPO }}"
+
+          # Tag with username/repo:latest
+          docker tag juice-shop:latest $DOCKER_USERNAME/$DOCKER_REPO:latest
+          echo "🏷️  Tagged: $DOCKER_USERNAME/$DOCKER_REPO:latest"
+
+          # Tag with username/repo:commit-sha
+          docker tag juice-shop:latest $DOCKER_USERNAME/$DOCKER_REPO:${{ github.sha }}
+          echo "🏷️  Tagged: $DOCKER_USERNAME/$DOCKER_REPO:${{ github.sha }}"
+
+          # Tag with username/repo:simple
+          docker tag juice-shop:latest $DOCKER_USERNAME/$DOCKER_REPO:simple
+          echo "🏷️  Tagged: $DOCKER_USERNAME/$DOCKER_REPO:simple"
+
+      - name: Push image to Docker Hub
+        run: |
+          DOCKER_USERNAME="${{ env.DOCKER_USERNAME }}"
+          DOCKER_REPO="${{ env.DOCKER_REPO }}"
+
+          echo "📤 Pushing images to Docker Hub..."
+
+          # Push all tags
+          docker push $DOCKER_USERNAME/$DOCKER_REPO:latest
+          docker push $DOCKER_USERNAME/$DOCKER_REPO:${{ github.sha }}
+          docker push $DOCKER_USERNAME/$DOCKER_REPO:simple
+
+          echo "✅ Image push completed!"
+
+      - name: Verify images
+        run: |
+          DOCKER_USERNAME="${{ env.DOCKER_USERNAME }}"
+          DOCKER_REPO="${{ env.DOCKER_REPO }}"
+
+          echo "📋 Docker images built:"
+          docker images | grep $DOCKER_REPO || docker images | grep juice-shop
+
+          echo ""
+          echo "🌐 View on Docker Hub: https://hub.docker.com/r/$DOCKER_USERNAME/$DOCKER_REPO"
+
+      - name: Success message
+        run: |
+          echo "🎉 Pipeline completed successfully! All 4 stages GREEN!"
+          echo "📦 Docker image built and pushed to Docker Hub"
+          echo "🌐 View at: https://hub.docker.com/r/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}"
+          echo ""
+          echo "Images available:"
+          echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest"
+          echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ github.sha }}"
+          echo "  - docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:simple"

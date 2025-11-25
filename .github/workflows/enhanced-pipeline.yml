@@ -400,30 +400,63 @@ jobs:
         id: endpoint
 
   # Stage 8: K8s Security (NEW - DAST with Parallel Execution)
-  k8s-security:
-    name: ${{ matrix.scan.display }}
+  # Stage 8a: K8s Manifest Security (Parallel - doesn't need app)
+  k8s-manifest-scan:
+    name: K8s Manifest Security
     runs-on: self-hosted
     needs: deploy
-    strategy:
-      fail-fast: false  # Run all scans even if one fails
-      matrix:
-        scan:
-          - name: k8s-manifest
-            display: "K8s Manifest Security"
-            needs_app: false
-          - name: security-headers
-            display: "Security Headers Analysis"
-            needs_app: true
-          - name: owasp-zap
-            display: "OWASP ZAP Baseline"
-            needs_app: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Run K8s Manifest Security Scan
+        run: |
+          echo "🔐 Scanning Kubernetes manifests for security issues..." | tee k8s-manifest-scan.txt
+          echo "" | tee -a k8s-manifest-scan.txt
+
+          # Scan deployment and service manifests with OPA Conftest
+          echo "=== Scanning K8s Deployment Manifest ===" | tee -a k8s-manifest-scan.txt
+          docker run --rm -v $(pwd):/project \
+            openpolicyagent/conftest:latest \
+            test --policy ./policy kind-k8s-cluster/juice-shop-deployment.yaml \
+            2>&1 | tee -a k8s-manifest-scan.txt \
+            || echo "⚠️  Policy violations in deployment manifest" | tee -a k8s-manifest-scan.txt
+
+          echo "" | tee -a k8s-manifest-scan.txt
+          echo "=== Scanning K8s Service Manifest ===" | tee -a k8s-manifest-scan.txt
+          docker run --rm -v $(pwd):/project \
+            openpolicyagent/conftest:latest \
+            test --policy ./policy kind-k8s-cluster/juice-shop-service.yaml \
+            2>&1 | tee -a k8s-manifest-scan.txt \
+            || echo "⚠️  Policy violations in service manifest" | tee -a k8s-manifest-scan.txt
+
+          echo "" | tee -a k8s-manifest-scan.txt
+          echo "📝 K8s manifest scan checks for:" | tee -a k8s-manifest-scan.txt
+          echo "   - Containers running as non-root (runAsNonRoot)" | tee -a k8s-manifest-scan.txt
+          echo "   - Security context settings" | tee -a k8s-manifest-scan.txt
+          echo "   - Service type configurations" | tee -a k8s-manifest-scan.txt
+          echo "   - Resource limits and requests" | tee -a k8s-manifest-scan.txt
+          echo "📚 Reference: Best practices from DevSecOps patterns" | tee -a k8s-manifest-scan.txt
+        continue-on-error: true
+
+      - name: Upload K8s Manifest Scan Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k8s-security-k8s-manifest
+          path: k8s-manifest-scan.txt
+          retention-days: 30
+
+  # Stage 8b: Security Headers Analysis (Parallel - needs app)
+  security-headers-scan:
+    name: Security Headers Analysis
+    runs-on: self-hosted
+    needs: deploy
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install kubectl (if not present)
-        if: matrix.scan.needs_app == true
         run: |
           if ! command -v kubectl &> /dev/null; then
             echo "📥 Installing kubectl..."
@@ -436,15 +469,12 @@ jobs:
           fi
 
       - name: Wait for application readiness
-        if: matrix.scan.needs_app == true
         run: |
           echo "⏳ Waiting for application to be ready..."
           sleep 30
           kubectl wait --for=condition=ready pod -l app=juice-shop --timeout=120s
 
-      # Application Health Check (only for scans that need it)
       - name: Application Health Check
-        if: matrix.scan.needs_app == true
         run: |
           echo "🏥 Checking application health..."
           echo "Waiting for application to start responding..."
@@ -484,41 +514,7 @@ jobs:
             exit 1
           fi
 
-      # K8s Manifest Security Scan
-      - name: Run K8s Manifest Security Scan
-        if: matrix.scan.name == 'k8s-manifest'
-        run: |
-          echo "🔐 Scanning Kubernetes manifests for security issues..." | tee k8s-manifest-scan.txt
-          echo "" | tee -a k8s-manifest-scan.txt
-
-          # Scan deployment and service manifests with OPA Conftest
-          echo "=== Scanning K8s Deployment Manifest ===" | tee -a k8s-manifest-scan.txt
-          docker run --rm -v $(pwd):/project \
-            openpolicyagent/conftest:latest \
-            test --policy ./policy kind-k8s-cluster/juice-shop-deployment.yaml \
-            2>&1 | tee -a k8s-manifest-scan.txt \
-            || echo "⚠️  Policy violations in deployment manifest" | tee -a k8s-manifest-scan.txt
-
-          echo "" | tee -a k8s-manifest-scan.txt
-          echo "=== Scanning K8s Service Manifest ===" | tee -a k8s-manifest-scan.txt
-          docker run --rm -v $(pwd):/project \
-            openpolicyagent/conftest:latest \
-            test --policy ./policy kind-k8s-cluster/juice-shop-service.yaml \
-            2>&1 | tee -a k8s-manifest-scan.txt \
-            || echo "⚠️  Policy violations in service manifest" | tee -a k8s-manifest-scan.txt
-
-          echo "" | tee -a k8s-manifest-scan.txt
-          echo "📝 K8s manifest scan checks for:" | tee -a k8s-manifest-scan.txt
-          echo "   - Containers running as non-root (runAsNonRoot)" | tee -a k8s-manifest-scan.txt
-          echo "   - Security context settings" | tee -a k8s-manifest-scan.txt
-          echo "   - Service type configurations" | tee -a k8s-manifest-scan.txt
-          echo "   - Resource limits and requests" | tee -a k8s-manifest-scan.txt
-          echo "📚 Reference: Best practices from DevSecOps patterns" | tee -a k8s-manifest-scan.txt
-        continue-on-error: true
-
-      # Security Headers Check
       - name: Run Security Headers Analysis
-        if: matrix.scan.name == 'security-headers'
         run: |
           echo "🔒 Analyzing HTTP security headers..." | tee security-headers-scan.txt
           echo "" | tee -a security-headers-scan.txt
@@ -539,9 +535,82 @@ jobs:
           echo "⚠️  Note: Juice Shop is intentionally vulnerable - missing headers are expected" | tee -a security-headers-scan.txt
         continue-on-error: true
 
-      # OWASP ZAP Baseline Scan (Optional - can be resource intensive)
+      - name: Upload Security Headers Scan Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k8s-security-security-headers
+          path: security-headers-scan.txt
+          retention-days: 30
+
+  # Stage 8c: OWASP ZAP Baseline (Parallel - needs app)
+  owasp-zap-scan:
+    name: OWASP ZAP Baseline
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl (if not present)
+        run: |
+          if ! command -v kubectl &> /dev/null; then
+            echo "📥 Installing kubectl..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
+            echo "✅ kubectl installed"
+          else
+            echo "✅ kubectl already installed"
+          fi
+
+      - name: Wait for application readiness
+        run: |
+          echo "⏳ Waiting for application to be ready..."
+          sleep 30
+          kubectl wait --for=condition=ready pod -l app=juice-shop --timeout=120s
+
+      - name: Application Health Check
+        run: |
+          echo "🏥 Checking application health..."
+          echo "Waiting for application to start responding..."
+
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          SUCCESS=false
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+
+            # Capture both HTTP code and curl exit code
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:30080 2>&1 || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Application is responding (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            elif [ "$HTTP_CODE" = "000" ]; then
+              echo "⚠️  Connection failed - application not ready yet"
+            else
+              echo "⚠️  Application returned HTTP $HTTP_CODE"
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Waiting 10 seconds before retry..."
+              sleep 10
+            fi
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ Application health check failed after $MAX_RETRIES attempts"
+            echo "Checking pod status:"
+            kubectl get pods -l app=juice-shop
+            kubectl describe pod -l app=juice-shop | tail -50
+            exit 1
+          fi
+
       - name: Run OWASP ZAP Baseline Scan
-        if: matrix.scan.name == 'owasp-zap'
         run: |
           echo "🔍 Running OWASP ZAP baseline scan..."
           echo "Note: This may take 2-5 minutes..."
@@ -556,22 +625,19 @@ jobs:
           echo "⚠️  Findings are expected for intentionally vulnerable application"
         continue-on-error: true
 
-      - name: Upload K8s Security Scan Report
+      - name: Upload OWASP ZAP Scan Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: k8s-security-${{ matrix.scan.name }}
-          path: |
-            k8s-manifest-scan.txt
-            security-headers-scan.txt
-            zap-report.html
+          name: k8s-security-owasp-zap
+          path: zap-report.html
           retention-days: 30
 
   # Stage 9: Security Report Consolidation
   consolidate-reports:
     name: Consolidate Security Reports
     runs-on: ubuntu-latest
-    needs: k8s-security
+    needs: [k8s-manifest-scan, security-headers-scan, owasp-zap-scan]
     if: always()  # Run even if previous stages have failures
     steps:
       - name: Checkout code

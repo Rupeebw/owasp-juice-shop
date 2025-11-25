@@ -13,18 +13,20 @@ OWASP Juice Shop is an intentionally insecure web application designed for secur
 ALWAYS refer below documents while working on this application
 
 1. /docs/AWS_DEPLOYMENT_PLAN.txt
-2. /docs/AWS_DEPLOYMENT_PLAN_ECS.txt
-3. /docs/DEVSECOPS_TRAINING_WITH_JUICE_SHOP.txt
-4. /docs/FRONTEND_BACKEND_DATABASE_FLOW.txt
-5. /docs/GIT_WORKFLOW_SLASH_COMMAND_MANUAL.txt
-6. /docs/LOCALSTACK_DEPLOYMENT_GUIDE.txt
-7. /docs/LocalStack/localStack-Setup.txt
-8. /docs/LocalStack/localStack-Slash.txt
-9. /docs/devsecops-practice-summary.txt
+   /docs/AWS_DEPLOYMENT_PLAN_ECS.txt
+   /docs/ChangeLog.txt
+   /docs/DEVSECOPS_TRAINING_WITH_JUICE_SHOP.txt
+   /docs/Deploy-App-2-K8s-Cluster.txt
+   /docs/FRONTEND_BACKEND_DATABASE_FLOW.txt
+   /docs/GIT_WORKFLOW_SLASH_COMMAND_MANUAL.txt
+   /docs/LOCALSTACK_DEPLOYMENT_GUIDE.txt
+   /docs/devsecops-practice-summary.txt
+   /docs/juice-shop-app.txt
+   /docs/security-scan/security-scan-tools.txt
 
 ## Git Commit Guidelines
 
-- Rule: I must NOT include the Claude Code signature and co-author attribution in commit messages for this repository.
+- Rule: I MUST NOT include the Claude Code signature and co-author attribution in commit messages for this repository.
 
 ## Documentation Guidelines
 

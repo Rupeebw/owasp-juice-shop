@@ -1,0 +1,1058 @@
+================================================================================
+SECURITY SCAN TOOLS IN OWASP JUICE SHOP REPOSITORY
+DevSecOps Pipeline Security Tooling Reference
+================================================================================
+
+TL;DR
+=====
+This repository references 11+ security scanning tools with TWO DEPLOYMENT PATHS:
+
+COMMON STAGES (Both Paths):
+- TEST STAGE: SAST, Secret Detection, Unit Tests
+- SECURITY-SCAN STAGE: npm audit, Trivy🐳, OPA/Conftest🐳, Gitleaks, RetireJS (parallel)
+- SONAR: Code quality and security analysis (manual gate)
+- DOCKER BUILD: Multi-stage container build
+
+PATH 1 - KUBERNETES (Primary Training):
+- K8S DEPLOY: Local Kind cluster deployment (port 30080)
+- K8S-SECURITY: DAST (ZAP, Security Headers) + K8s Cluster Scans (reference)
+- Tools: KubeSec, KubeBench, KubeScan, Falco
+
+PATH 2 - AWS ECS (Cloud Alternative):
+- ECS DEPLOY: AWS Fargate + ECR push
+- ECS-SECURITY: DAST (ZAP, Security Headers) + AWS Security Scans (reference)
+- Tools: ECR Scan, ECS Task Check, GuardDuty
+
+Total: 11 main tools + 4 K8s tools + 3 ECS tools = 18 security tools
+Docker Focus: Trivy (#5) and OPA/Conftest (#6) marked with 🐳
+Focus: Dev/Training environment with dual deployment options
+
+================================================================================
+SECURITY TOOLS INVENTORY (11 TOOLS - DEV/TRAINING FOCUS)
+================================================================================
+
+STATUS LEGEND:
+✅ Currently Implemented - Active in current pipeline
+📋 Documented/Planned - Documented in training materials, not yet implemented
+🔮 Reference Only - From DevSecOps reference material, not planned for Juice Shop
+
+┌────┬─────────────────────┬──────────────┬────────────────┬─────────────────┐
+│ #  │ Tool Name           │ Category     │ Pipeline Stage │ Status          │
+├────┼─────────────────────┼──────────────┼────────────────┼─────────────────┤
+│ 1  │ SAST (Generic)      │ SAST         │ TEST           │ 📋 Planned      │
+│ 2  │ Secret Detection    │ Secret Scan  │ TEST           │ 📋 Planned      │
+│ 3  │ Unit Tests          │ Testing      │ TEST           │ ✅ Implemented  │
+│ 4  │ npm audit           │ SCA          │ SECURITY-SCAN  │ 📋 Planned      │
+│ 5  │ Trivy               │ Container    │ SECURITY-SCAN  │ 📋 Planned      │
+│ 6  │ OPA/Conftest        │ Policy       │ SECURITY-SCAN  │ 📋 Planned      │
+│ 7  │ Gitleaks            │ Secret Scan  │ SECURITY-SCAN  │ 📋 Planned      │
+│ 8  │ RetireJS            │ SCA          │ SECURITY-SCAN  │ 📋 Planned      │
+│ 9  │ SonarQube           │ SAST         │ SONAR          │ 📋 Planned      │
+│ 10 │ OWASP ZAP (Staging) │ DAST         │ STAGING-SEC    │ 📋 Planned      │
+│ 11 │ Security Headers    │ Security     │ STAGING-SEC    │ 📋 Planned      │
+└────┴─────────────────────┴──────────────┴────────────────┴─────────────────┘
+
+KUBERNETES SECURITY TOOLS (PATH 1 - K8s Deployment):
+┌────┬─────────────────────┬──────────────┬────────────────┬─────────────────┐
+│ 12 │ KubeSec             │ K8s Security │ K8s Deploy     │ 🔮 Reference    │
+│ 13 │ KubeBench           │ K8s Security │ K8s Runtime    │ 🔮 Reference    │
+│ 14 │ KubeScan            │ K8s Security │ K8s Runtime    │ 🔮 Reference    │
+│ 15 │ Falco               │ Runtime Sec  │ K8s Runtime    │ 🔮 Reference    │
+└────┴─────────────────────┴──────────────┴────────────────┴─────────────────┘
+
+AWS ECS SECURITY TOOLS (PATH 2 - ECS Deployment):
+┌────┬─────────────────────┬──────────────┬────────────────┬─────────────────┐
+│ 16 │ ECR Image Scan      │ Container    │ ECS Security   │ 🔮 Reference    │
+│ 17 │ ECS Task Check      │ ECS Config   │ ECS Security   │ 🔮 Reference    │
+│ 18 │ AWS GuardDuty       │ Threat Det   │ ECS Security   │ 🔮 Reference    │
+└────┴─────────────────────┴──────────────┴────────────────┴─────────────────┘
+
+GITLAB AUTO-DEVOPS (in .gitlab-ci.yml):
+┌────┬─────────────────────┬──────────────┬────────────────┬─────────────────┐
+│ 19 │ GitLab SAST         │ SAST         │ Auto-DevOps    │ ✅ Configured   │
+│ 20 │ GitLab DAST         │ DAST         │ Auto-DevOps    │ ✅ Disabled     │
+└────┴─────────────────────┴──────────────┴────────────────┴─────────────────┘
+
+================================================================================
+PIPELINE FLOW DIAGRAM - SECURITY TOOLS IN CONTEXT
+================================================================================
+
+TWO DEPLOYMENT PATHS: Kubernetes (K8s) and AWS ECS
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+PATH 1: KUBERNETES (K8s) DEPLOYMENT FLOW - Primary Training Path
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+ BUILD         SETUP/        TEST STAGE      SECURITY-SCAN         SONAR        DOCKER         K8S            K8S-           K8S-SECURITY
+ARTIFACT  ──►   LINT   ──►   (Blocking)  ──► (Parallel Scans)  ──► (Manual) ──► BUILD+PUSH ──► DEPLOY   ──►  SECURITY  ──►  (K8s Scans)
+   ✓            ✓              🔴              ⚠️⚠️⚠️⚠️⚠️            🔒         🐳 DOCKER 🐳    ✓            (DAST)          🔮🔮🔮🔮
+                                              🐳 DOCKER FOCUS                                                ⚠️⚠️
+
+┌─────────┐  ┌────────┐   ┌────────────┐   ┌──────────────┐   ┌────────┐  ┌────────┐   ┌────────┐   ┌──────────┐   ┌──────────┐
+│  npm    │  │  npm   │   │            │   │ Vulnerability│   │   9.   │  │ Docker │   │ K8s    │   │          │   │    K8s   │
+│ install │─►│  run   │─► │  1. SAST   │─► │  & Docker    │─► │ Sonar  │─►│  Build │─► │ Cluster│─► │ 10. ZAP  │─► │  Cluster │
+│         │  │  lint  │   │  [BLOCK]   │   │    Scans     │   │  Qube  │  │   &    │   │ Deploy │   │ Baseline │   │ Security │
+└─────────┘  └────────┘   │            │   │              │   │ [GATE] │  │  Tag   │   │  to    │   │ [WARN]   │   │ [REF]    │
+                          │  2. Secret │   │  ┌────────┐  │   │        │  │        │   │ Kind   │   │          │   │          │
+                          │  Detection │   │  │4. npm  │  │   └────────┘  └────────┘   │:30080  │   │ 11. Sec  │   │┌────────┐│
+                          │  [BLOCK]   │   │  │ audit  │  │                            └────────┘   │ Headers  │   ││12.Kube │││
+                          │            │   │  └────────┘  │                                          │ [WARN]   │   ││  Sec   │││
+                          │  3. Unit   │   │              │                                          └──────────┘   ││ [REF]  │││
+                          │   Tests    │   │  ┌────────┐  │                                                         │└────────┘││
+                          │  [WARN]    │   │  │5.Trivy │  │                                                         │          │
+                          │            │   │  │ DOCKER │  │                                                         │┌────────┐││
+                          └────────────┘   │  │🐳[WARN]│  │                                                         ││13.Kube │││
+                                          │  └────────┘  │                                                         ││ Bench  │││
+                                          │              │                                                         ││ [REF]  │││
+                                          │  ┌────────┐  │                                                         │└────────┘││
+                                          │  │6. OPA/ │  │                                                         │          │
+                                          │  │Conftest│  │                                                         │┌────────┐││
+                                          │  │DOCKER  │  │                                                         ││14.Kube │││
+                                          │  │🐳[WARN]│  │                                                         ││  Scan  │││
+                                          │  └────────┘  │                                                         ││ [REF]  │││
+                                          │              │                                                         │└────────┘││
+                                          │  ┌────────┐  │                                                         │          │
+                                          │  │7.Gitleaks│ │                                                         │┌────────┐││
+                                          │  │ [WARN] │  │                                                         ││15.Falco│││
+                                          │  └────────┘  │                                                         ││ [REF]  │││
+                                          │              │                                                         │└────────┘││
+                                          │  ┌────────┐  │                                                         └──────────┘
+                                          │  │8.RetireJS│ │
+                                          │  │ [WARN] │  │
+                                          │  └────────┘  │
+                                          └──────────────┘
+
+
+PATH 2: AWS ECS DEPLOYMENT FLOW - Cloud-Native Alternative
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+ BUILD         SETUP/        TEST STAGE      SECURITY-SCAN         SONAR        DOCKER         ECS            ECS-           ECS-SECURITY
+ARTIFACT  ──►   LINT   ──►   (Blocking)  ──► (Parallel Scans)  ──► (Manual) ──► BUILD+PUSH ──► DEPLOY   ──►  SECURITY  ──►  (ECS Scans)
+   ✓            ✓              🔴              ⚠️⚠️⚠️⚠️⚠️            🔒         🐳 DOCKER 🐳    ☁️            (DAST)          🔮🔮🔮
+                                              🐳 DOCKER FOCUS                                                ⚠️⚠️
+
+┌─────────┐  ┌────────┐   ┌────────────┐   ┌──────────────┐   ┌────────┐  ┌────────┐   ┌────────┐   ┌──────────┐   ┌──────────┐
+│  npm    │  │  npm   │   │            │   │ Vulnerability│   │   9.   │  │ Docker │   │  ECS   │   │          │   │   ECS    │
+│ install │─►│  run   │─► │  1. SAST   │─► │  & Docker    │─► │ Sonar  │─►│  Build │─► │ Fargate│─► │ 10. ZAP  │─► │ Security │
+│         │  │  lint  │   │  [BLOCK]   │   │    Scans     │   │  Qube  │  │   &    │   │ Deploy │   │ Baseline │   │   Scan   │
+└─────────┘  └────────┘   │            │   │              │   │ [GATE] │  │  Push  │   │  to    │   │ [WARN]   │   │ [REF]    │
+                          │  2. Secret │   │  ┌────────┐  │   │        │  │  to    │   │  AWS   │   │          │   │          │
+                          │  Detection │   │  │4. npm  │  │   └────────┘  │  ECR   │   │ Cloud  │   │ 11. Sec  │   │┌────────┐│
+                          │  [BLOCK]   │   │  │ audit  │  │               └────────┘   └────────┘   │ Headers  │   ││16. ECR │││
+                          │            │   │  └────────┘  │                                          │ [WARN]   │   ││  Scan  │││
+                          │  3. Unit   │   │              │                                          └──────────┘   ││ [REF]  │││
+                          │   Tests    │   │  ┌────────┐  │                                                         │└────────┘││
+                          │  [WARN]    │   │  │5.Trivy │  │                                                         │          │
+                          │            │   │  │ DOCKER │  │                                                         │┌────────┐││
+                          └────────────┘   │  │🐳[WARN]│  │                                                         ││17. ECS │││
+                                          │  └────────┘  │                                                         ││ Task   │││
+                                          │              │                                                         ││ Check  │││
+                                          │  ┌────────┐  │                                                         ││ [REF]  │││
+                                          │  │6. OPA/ │  │                                                         │└────────┘││
+                                          │  │Conftest│  │                                                         │          │
+                                          │  │DOCKER  │  │                                                         │┌────────┐││
+                                          │  │🐳[WARN]│  │                                                         ││18.Guard│││
+                                          │  └────────┘  │                                                         ││ Duty   │││
+                                          │              │                                                         ││ [REF]  │││
+                                          │  ┌────────┐  │                                                         │└────────┘││
+                                          │  │7.Gitleaks│ │                                                         └──────────┘
+                                          │  │ [WARN] │  │
+                                          │  └────────┘  │
+                                          │              │
+                                          │  ┌────────┐  │
+                                          │  │8.RetireJS│ │
+                                          │  │ [WARN] │  │
+                                          │  └────────┘  │
+                                          └──────────────┘
+
+STAGE DETAILS (Common Stages):
+───────────────────────────────
+BUILD ARTIFACT: npm install (dependencies setup)
+SETUP/LINT:     Code style validation (eslint, typescript checks)
+TEST STAGE:     3 security checks run sequentially (blocking on SAST & Secrets)
+SECURITY-SCAN:  5 parallel vulnerability scans (all warnings for training)
+                🐳 DOCKER FOCUS: Tools #5 (Trivy) and #6 (OPA/Conftest) scan Docker
+SONAR:          Manual code quality gate review
+DOCKER BUILD:   Multi-stage build, create container image (same for both paths)
+
+PATH 1: K8s-SPECIFIC STAGES
+────────────────────────────
+K8S DEPLOY:     Deploy to local Kind cluster (port 30080)
+K8S-SECURITY:   2 runtime DAST scans (#10 ZAP, #11 Sec Headers)
+K8S-SECURITY:   4 Kubernetes cluster scans (#12-15: KubeSec, KubeBench, KubeScan, Falco)
+
+PATH 2: ECS-SPECIFIC STAGES
+────────────────────────────
+ECS DEPLOY:     Deploy to AWS ECS Fargate (push to ECR)
+ECS-SECURITY:   2 runtime DAST scans (#10 ZAP, #11 Sec Headers)
+ECS-SECURITY:   3 AWS-specific scans (#16 ECR Scan, #17 ECS Task Check, #18 GuardDuty)
+
+LEGEND:
+───────
+✓  = Completed stage
+🔴 = BLOCKING - Pipeline fails if issues found (TEST stage only)
+⚠️  = WARNING - Pipeline continues, alerts generated (SECURITY-SCAN, STAGING-SEC)
+🔒 = MANUAL - Requires approval to proceed (SONAR gate)
+🔮 = REFERENCE - Optional/reference tools (K8S-SECURITY, ECS-SECURITY stages)
+🐳 = DOCKER - Docker/container-focused security tool
+☁️  = CLOUD - AWS cloud deployment (ECS path)
+[BLOCK] = Blocks deployment on failure
+[WARN] = Warns but allows continuation
+[GATE] = Manual review checkpoint
+[REF] = Reference only - not implemented in training pipeline
+
+================================================================================
+DETAILED TOOL DESCRIPTIONS
+================================================================================
+
+CATEGORY 1: STATIC APPLICATION SECURITY TESTING (SAST)
+-------------------------------------------------------
+Purpose: Analyze source code for vulnerabilities without executing it
+When: Early in pipeline (left-shift security)
+Blocks: Yes (critical issues)
+
+Tool #1: SAST (Generic)
+├─ Purpose: Scan source code for security vulnerabilities
+├─ Stage: TEST (Blocking)
+├─ Technology: CodeQL, Semgrep, or similar
+├─ What it scans: TypeScript/JavaScript source code
+├─ Detects: SQL injection, XSS, hardcoded secrets, insecure functions
+├─ Exit behavior: BLOCKS pipeline on HIGH/CRITICAL findings
+├─ Scan time: 3-8 minutes
+├─ Implementation: GitHub Actions (planned)
+└─ Status: 📋 Documented, not yet implemented
+
+Tool #7: SonarQube
+├─ Purpose: Comprehensive code quality and security analysis
+├─ Stage: SONAR (Manual gate)
+├─ Technology: SonarQube/SonarCloud
+├─ What it scans: Full codebase (frontend + backend)
+├─ Detects: Code smells, bugs, vulnerabilities, duplications, coverage gaps
+├─ Metrics: Technical debt, maintainability rating, security rating
+├─ Exit behavior: Manual review (quality gate)
+├─ Scan time: 5-10 minutes
+├─ Implementation: Separate stage after security-scan
+├─ Features:
+│   • Historical trend analysis
+│   • Pull request decoration
+│   • Custom quality gates
+│   • IDE integration
+└─ Status: 📋 Planned for enhanced pipeline
+
+CATEGORY 2: SECRET SCANNING
+----------------------------
+Purpose: Detect exposed credentials, API keys, tokens
+When: Test stage (blocking) + Security-scan stage (warning)
+Blocks: Yes (in TEST stage)
+
+Tool #2: Secret Detection (Generic)
+├─ Purpose: Detect hardcoded secrets in code
+├─ Stage: TEST (Blocking)
+├─ Technology: TruffleHog, detect-secrets, or similar
+├─ What it scans: All source files, config files, env files
+├─ Detects: API keys, passwords, tokens, private keys, certificates
+├─ Exit behavior: BLOCKS on detection
+├─ Scan time: 1-2 minutes
+├─ Patterns: 600+ secret patterns
+└─ Status: 📋 Planned for TEST stage
+
+Tool #6: Gitleaks
+├─ Purpose: Detect secrets in git history and code
+├─ Stage: SECURITY-SCAN (Warning)
+├─ Technology: Gitleaks v8+
+├─ What it scans: Git commits, staged files, entire history
+├─ Detects:
+│   • AWS keys, GCP keys, Azure credentials
+│   • GitHub tokens, GitLab tokens
+│   • Database credentials
+│   • Private keys (RSA, SSH)
+│   • API keys (Stripe, SendGrid, etc.)
+├─ Exit behavior: WARNING only (non-blocking)
+├─ Scan time: 1-3 minutes
+├─ Configuration: .gitleaks.toml (custom rules)
+├─ Output: JSON report with line numbers
+└─ Status: 📋 Planned for SECURITY-SCAN stage
+
+CATEGORY 3: SOFTWARE COMPOSITION ANALYSIS (SCA)
+------------------------------------------------
+Purpose: Scan dependencies for known vulnerabilities
+When: Security-scan stage (parallel execution)
+Blocks: No (warning mode)
+
+Tool #4: npm audit
+├─ Purpose: Scan npm dependencies for CVEs
+├─ Stage: SECURITY-SCAN (Warning)
+├─ Technology: Built-in npm audit
+├─ What it scans: package.json, package-lock.json dependencies
+├─ Detects: Known vulnerabilities in npm packages (via GitHub Advisory DB)
+├─ Severity levels: Low, Moderate, High, Critical
+├─ Exit behavior: WARNING (non-blocking)
+├─ Scan time: 30-60 seconds
+├─ Command: npm audit --audit-level=moderate
+├─ Output:
+│   • Vulnerability count by severity
+│   • Affected packages and versions
+│   • Suggested fixes (npm audit fix)
+├─ Coverage: 2M+ vulnerabilities in npm registry
+└─ Status: 📋 Planned for SECURITY-SCAN stage
+
+Tool #7: RetireJS
+├─ Purpose: Detect outdated JavaScript libraries with known vulnerabilities
+├─ Stage: SECURITY-SCAN (Warning)
+├─ Technology: RetireJS scanner
+├─ What it scans: JavaScript libraries (frontend + bundled code)
+├─ Detects:
+│   • Outdated libraries (jQuery, Angular, React, etc.)
+│   • Known CVEs in JavaScript dependencies
+│   • Vulnerable versions with public exploits
+├─ Exit behavior: WARNING (non-blocking)
+├─ Scan time: 1-2 minutes
+├─ Database: Community-maintained vulnerability DB
+├─ Output: HTML/JSON report with CVE details
+├─ Use case: Complement npm audit (client-side focus)
+└─ Status: 📋 Planned for SECURITY-SCAN stage
+
+CATEGORY 4: CONTAINER SECURITY SCANNING
+----------------------------------------
+Purpose: Scan Docker images for vulnerabilities
+When: Security-scan stage (after image build)
+Blocks: No (warning mode)
+
+Tool #5: Trivy
+├─ Purpose: Comprehensive container image security scanner
+├─ Stage: SECURITY-SCAN (Warning)
+├─ Technology: Aqua Security Trivy
+├─ What it scans:
+│   • OS packages (Alpine, Debian, Ubuntu, etc.)
+│   • Application dependencies (npm, pip, gem, etc.)
+│   • IaC misconfigurations (Dockerfile, K8s YAML)
+│   • Secrets in image layers
+├─ Detects:
+│   • CVEs in OS packages (apt, apk, yum)
+│   • Vulnerable dependencies in all layers
+│   • Dockerfile best practice violations
+│   • Exposed secrets in image history
+├─ Databases:
+│   • NVD (National Vulnerability Database)
+│   • GitHub Security Advisory
+│   • RHEL/Alpine/Debian security trackers
+├─ Exit behavior: WARNING (non-blocking in current config)
+├─ Scan time: 2-5 minutes
+├─ Command: trivy image --severity HIGH,CRITICAL juice-shop:latest
+├─ Output formats: JSON, SARIF, HTML table
+├─ Features:
+│   • Offline scanning (air-gapped environments)
+│   • SBOM generation (CycloneDX, SPDX)
+│   • CI/CD integration (GitHub Actions, GitLab CI)
+│   • Policy-as-code with Rego
+├─ Use case: Scan Docker images before pushing to registry
+└─ Status: 📋 Planned for SECURITY-SCAN stage
+
+Tool #6: OPA/Conftest (Dockerfile Policy Enforcement)
+├─ Purpose: Policy-as-Code for Dockerfile best practices validation
+├─ Stage: SECURITY-SCAN (Warning)
+├─ Technology: Open Policy Agent (OPA) + Conftest
+├─ What it validates:
+│   • Dockerfile best practices compliance
+│   • Security policy violations
+│   • Organizational standards enforcement
+│   • Image registry restrictions
+│   • Required security labels
+├─ Detects:
+│   • Running containers as root (USER not set)
+│   • Missing health checks (HEALTHCHECK)
+│   • Using latest tags (security risk)
+│   • Missing security labels
+│   • Exposed ports violating policy
+│   • Non-approved base images
+│   • Missing or incorrect metadata
+│   • Hardcoded secrets in Dockerfile
+├─ Language: Rego (OPA policy language)
+├─ Exit behavior: WARNING (non-blocking)
+├─ Scan time: 30-60 seconds
+├─ Commands:
+│   • conftest test Dockerfile
+│   • conftest test --policy ./policy Dockerfile
+├─ Output: Text report with policy violations
+├─ Configuration: policy/ directory with .rego files
+├─ Example policies:
+│   • Deny images without explicit user
+│   • Require approved base images only
+│   • Enforce minimal FROM layers
+│   • Mandate security labels
+│   • Block privileged operations
+├─ Use cases:
+│   • Enforce Dockerfile best practices
+│   • Validate security compliance before build
+│   • Organizational policy enforcement
+│   • Complement Trivy (policy vs vulnerabilities)
+├─ Integration: Pre-build validation, CI/CD gates
+└─ Status: 📋 Planned for SECURITY-SCAN stage
+
+CATEGORY 5: DYNAMIC APPLICATION SECURITY TESTING (DAST)
+--------------------------------------------------------
+Purpose: Test running application for runtime vulnerabilities
+When: Staging deployments only (training/dev environment)
+Blocks: No (warning mode)
+
+Tool #10: OWASP ZAP (Staging)
+├─ Purpose: Dynamic security testing of deployed application
+├─ Stage: STAGING-SECURITY (Warning)
+├─ Technology: OWASP ZAP (Zed Attack Proxy) v2.14+
+├─ What it tests: Running web application (HTTP/HTTPS endpoints)
+├─ Scan modes:
+│   • Baseline scan (passive, 5-10 min) - Recommended for training
+│   • Full scan (active, 30-60 min) - Optional for deep testing
+│   • API scan (OpenAPI/Swagger specs)
+├─ Detects:
+│   • SQL injection vulnerabilities
+│   • Cross-Site Scripting (XSS)
+│   • CSRF (Cross-Site Request Forgery)
+│   • Security misconfigurations
+│   • Sensitive data exposure
+│   • Authentication/session issues
+│   • OWASP Top 10 vulnerabilities
+├─ Exit behavior: WARNING (non-blocking)
+├─ Scan time:
+│   • Baseline: 5-10 minutes
+│   • Full: 30-60 minutes (configurable)
+├─ Commands:
+│   • zap-baseline.py -t http://localhost:30080
+│   • zap-baseline.py -t http://staging.local
+├─ Output: HTML report, XML report, JSON results
+├─ Configuration: .zap/rules.tsv (custom risk levels)
+├─ Integration: Docker image (owasp/zap2docker-stable)
+├─ Use case: Validate application security in staging/dev environment
+├─ Training note: Scans training environment with intentional vulnerabilities
+└─ Status: 📋 Planned for STAGING-SECURITY stage
+
+Tool #11: Security Headers Check
+├─ Purpose: Validate HTTP security headers
+├─ Stage: STAGING-SECURITY (Warning)
+├─ Technology: securityheaders.com API or curl-based
+├─ What it checks:
+│   • Content-Security-Policy (CSP)
+│   • X-Frame-Options (clickjacking protection)
+│   • X-Content-Type-Options (MIME sniffing)
+│   • Strict-Transport-Security (HSTS)
+│   • X-XSS-Protection
+│   • Referrer-Policy
+│   • Permissions-Policy
+├─ Exit behavior: WARNING (non-blocking)
+├─ Scan time: 10-30 seconds
+├─ Command: curl -I http://localhost:30080
+├─ Scoring: A+ to F grade
+├─ Training note: Juice Shop intentionally has weak security headers
+└─ Status: 📋 Planned for STAGING-SECURITY stage
+
+CATEGORY 6: TESTING & VALIDATION
+---------------------------------
+Purpose: Ensure code quality and functionality
+When: Test stage (after lint)
+Blocks: No (warning mode in training)
+
+Tool #3: Unit Tests
+├─ Purpose: Validate code functionality and catch regressions
+├─ Stage: TEST (Warning in training mode)
+├─ Technology:
+│   • Backend: Mocha + Chai
+│   • Frontend: Karma + Jasmine
+│   • API: Frisby + Jest
+├─ What it tests:
+│   • Server logic (routes, models, utilities)
+│   • Frontend components
+│   • API endpoints
+├─ Coverage: Code coverage reports via nyc/Istanbul
+├─ Exit behavior: WARNING (continue-on-error: true)
+├─ Reason for warning mode: Training environment, intentional vulnerabilities
+├─ Test counts:
+│   • Backend: 300+ tests
+│   • Frontend: 200+ tests
+│   • API: 100+ tests
+├─ Scan time: 5-10 minutes
+└─ Status: ✅ Currently implemented in simple-pipeline.yml
+
+================================================================================
+KUBERNETES SECURITY TOOLS (REFERENCE MATERIAL)
+================================================================================
+
+These tools are documented in DevSecOps reference material but not currently
+planned for Juice Shop training. Included for completeness and future reference.
+
+Tool #11: KubeSec
+├─ Purpose: Kubernetes manifest security scanning
+├─ Category: K8s Security
+├─ What it scans: K8s YAML manifests (deployments, pods, services)
+├─ Detects:
+│   • Pod Security Policy violations
+│   • Privilege escalation risks
+│   • Resource limits not set
+│   • Dangerous capabilities
+│   • Host network/PID/IPC usage
+├─ Scoring: Risk score (0-100)
+├─ Integration: CLI tool, Docker image, admission controller
+└─ Status: 🔮 Reference only (from DevSecOpsPractice repo)
+
+Tool #12: KubeBench
+├─ Purpose: CIS Kubernetes Benchmark compliance checker
+├─ Category: K8s Security
+├─ What it tests: Kubernetes cluster configuration
+├─ Checks:
+│   • Master node security
+│   • Worker node security
+│   • etcd security
+│   • Control plane configuration
+│   • RBAC settings
+├─ Standards: CIS Kubernetes Benchmark v1.6+
+├─ Output: Pass/Fail report with remediation steps
+└─ Status: 🔮 Reference only
+
+Tool #13: KubeScan
+├─ Purpose: Kubernetes risk assessment and RBAC analysis
+├─ Category: K8s Security
+├─ What it scans:
+│   • RBAC permissions
+│   • Service account privileges
+│   • Pod security contexts
+│   • Network policies
+├─ Output: Risk score per workload
+└─ Status: 🔮 Reference only
+
+Tool #14: OPA/Conftest (K8s Manifest Validation)
+├─ Purpose: Policy-as-Code for Kubernetes manifest security
+├─ Category: Policy Enforcement (K8s focus)
+├─ What it validates:
+│   • Kubernetes security policies
+│   • K8s resource configurations
+│   • Custom organizational policies
+├─ Language: Rego (policy language)
+├─ Use cases:
+│   • Enforce K8s resource limits
+│   • Block privileged containers in K8s
+│   • Validate service account permissions
+│   • K8s network policy enforcement
+├─ Note: Also used for Dockerfile validation (see Tool #6)
+└─ Status: 🔮 Reference only (K8s use case)
+
+Tool #15: Falco
+├─ Purpose: Runtime security monitoring for Kubernetes
+├─ Category: Runtime Security
+├─ What it monitors:
+│   • Abnormal system calls
+│   • Suspicious container behavior
+│   • Privilege escalation attempts
+│   • File integrity violations
+├─ Integration: DaemonSet, Helm chart
+├─ Alerting: Slack, PagerDuty, Syslog
+└─ Status: 🔮 Reference only
+
+================================================================================
+GITLAB AUTO-DEVOPS INTEGRATION
+================================================================================
+
+Tool #16: GitLab SAST
+├─ Purpose: Static Application Security Testing (GitLab built-in)
+├─ Stage: Auto-DevOps
+├─ Configuration: .gitlab-ci.yml
+│   include:
+│     - template: Auto-DevOps.gitlab-ci.yml
+│   variables:
+│     SAST_EXCLUDED_PATHS: "frontend/src/assets/private/**"
+├─ Scan targets: TypeScript, JavaScript, Node.js
+├─ Output: Security dashboard, vulnerability reports
+└─ Status: ✅ Configured (for GitLab CI usage)
+
+Tool #17: GitLab DAST
+├─ Purpose: Dynamic Application Security Testing (GitLab built-in)
+├─ Stage: Auto-DevOps
+├─ Configuration: DAST_DISABLED: "true" (currently disabled)
+├─ Reason for disable: Training environment with intentional vulns
+└─ Status: ✅ Configured but disabled
+
+================================================================================
+PIPELINE STAGE BREAKDOWN
+================================================================================
+
+STAGE 1: SETUP/LINT
+-------------------
+├─ npm install
+├─ npm run lint
+└─ Purpose: Code style and syntax validation
+
+STAGE 2: TEST (Blocking Stage)
+-------------------------------
+├─ Tool #1: SAST [BLOCK on HIGH/CRITICAL]
+├─ Tool #2: Secret Detection [BLOCK on detection]
+├─ Tool #3: Unit Tests [WARN in training, BLOCK in production]
+└─ Purpose: Early vulnerability detection (shift-left security)
+
+STAGE 3: SECURITY-SCAN (Parallel Execution)
+--------------------------------------------
+├─ Tool #4: npm audit [WARN]
+├─ Tool #5: Trivy container scan [WARN]
+├─ Tool #6: OPA/Conftest Dockerfile validation [WARN]
+├─ Tool #7: Gitleaks [WARN]
+├─ Tool #8: RetireJS [WARN]
+└─ Purpose: Comprehensive security scanning (non-blocking alerts)
+
+STAGE 4: SONAR (Manual Gate)
+-----------------------------
+├─ Tool #9: SonarQube [MANUAL REVIEW]
+└─ Purpose: Code quality gate and manual review checkpoint
+
+STAGE 5: STAGING DEPLOY
+------------------------
+├─ Build Docker image
+├─ Push to registry
+└─ Deploy to staging environment
+
+STAGE 6: STAGING-SECURITY (Post-Deploy Validation)
+---------------------------------------------------
+├─ Tool #10: OWASP ZAP baseline scan [WARN]
+├─ Tool #11: Security Headers check [WARN]
+└─ Purpose: Runtime security validation in staging/dev environment
+
+NOTE: This training pipeline stops at staging. Production deployment is not
+covered in this dev/training-focused guide.
+
+================================================================================
+TOOL SELECTION RATIONALE
+================================================================================
+
+WHY THESE TOOLS?
+----------------
+
+1. npm audit
+   ✓ Built-in to npm (no installation required)
+   ✓ Covers Node.js/JavaScript dependencies
+   ✓ Integrated with GitHub Advisory Database
+   ✓ Free and widely adopted
+
+2. Trivy
+   ✓ Comprehensive scanner (OS + dependencies + IaC + secrets)
+   ✓ Fast scanning (2-5 minutes)
+   ✓ Multiple output formats (JSON, SARIF, HTML)
+   ✓ Active maintenance and frequent updates
+   ✓ Free and open-source
+
+3. OPA/Conftest
+   ✓ Policy-as-Code for Dockerfile validation
+   ✓ Enforce organizational security standards
+   ✓ Flexible Rego policy language
+   ✓ Complements vulnerability scanners with policy checks
+   ✓ Free and open-source
+
+4. Gitleaks
+   ✓ Purpose-built for git secret scanning
+   ✓ Scans entire git history
+   ✓ 600+ secret patterns
+   ✓ Low false-positive rate
+   ✓ Free and open-source
+
+5. RetireJS
+   ✓ JavaScript-specific vulnerability scanner
+   ✓ Client-side library focus
+   ✓ Complements npm audit (different coverage)
+   ✓ Community-maintained vulnerability DB
+
+6. OWASP ZAP
+   ✓ Industry standard for DAST
+   ✓ OWASP project (trusted, maintained)
+   ✓ Multiple scan modes (baseline, full, API)
+   ✓ Excellent CI/CD integration
+   ✓ Free and open-source
+
+7. SonarQube
+   ✓ Comprehensive code quality + security
+   ✓ Historical trend analysis
+   ✓ Pull request decoration
+   ✓ IDE integration
+   ✓ Free community edition
+
+================================================================================
+BLOCKING VS WARNING STRATEGY
+================================================================================
+
+BLOCKING (Pipeline Fails) 🔴
+---------------------------
+Stage: TEST
+Tools:
+  • SAST (HIGH/CRITICAL findings)
+  • Secret Detection (any secrets found)
+Rationale:
+  ✓ Critical vulnerabilities caught early
+  ✓ Prevent secrets from being committed
+  ✓ Left-shift security (fix before merge)
+
+WARNING (Pipeline Continues) ⚠️
+-------------------------------
+Stage: SECURITY-SCAN, STAGING-SECURITY
+Tools:
+  • npm audit
+  • Trivy
+  • OPA/Conftest
+  • Gitleaks
+  • RetireJS
+  • OWASP ZAP
+  • Security Headers
+Rationale:
+  ✓ Training environment (intentionally vulnerable app)
+  ✓ Avoid false-positive pipeline failures
+  ✓ Generate alerts for review
+  ✓ Non-blocking visibility into security posture
+  ✓ Allows trainees to see full pipeline execution
+  ✓ Educational focus - learn from warnings without blocking
+
+================================================================================
+IMPLEMENTATION STATUS
+================================================================================
+
+CURRENTLY IMPLEMENTED (simple-pipeline.yml):
+✅ Stage 1: Lint (npm run lint)
+✅ Stage 2: Test (npm test with continue-on-error)
+✅ Stage 3: Build (Docker image build)
+✅ Stage 4: Push (Docker Hub push)
+✅ Stage 5: Deploy (Kubernetes deployment)
+
+PLANNED FOR ENHANCED PIPELINE (Dev/Training Focus):
+📋 SAST in TEST stage (CodeQL or Semgrep)
+📋 Secret Detection in TEST stage
+📋 npm audit in SECURITY-SCAN stage
+📋 Trivy in SECURITY-SCAN stage
+📋 OPA/Conftest in SECURITY-SCAN stage
+📋 Gitleaks in SECURITY-SCAN stage
+📋 RetireJS in SECURITY-SCAN stage
+📋 SonarQube in SONAR stage
+📋 OWASP ZAP in STAGING-SECURITY stage
+📋 Security Headers check in STAGING-SECURITY stage
+
+REFERENCE ONLY (DevSecOps material):
+🔮 KubeSec (K8s manifest scanning)
+🔮 KubeBench (CIS benchmark compliance)
+🔮 KubeScan (RBAC risk assessment)
+🔮 OPA/Conftest for K8s (Policy-as-Code for K8s manifests)
+🔮 Falco (Runtime security monitoring)
+
+================================================================================
+SECURITY SCAN TIMELINE
+================================================================================
+
+Total Pipeline Execution Time (Estimated):
+-------------------------------------------
+
+Simple Pipeline (Current):
+├─ Lint: 30-60 seconds
+├─ Test: 5-10 minutes
+├─ Build: 3-5 minutes
+├─ Push: 2-4 minutes
+├─ Deploy: 2-3 minutes
+└─ TOTAL: ~15-25 minutes
+
+Enhanced Pipeline (Planned):
+├─ Lint: 30-60 seconds
+├─ TEST Stage (Sequential):
+│   ├─ SAST: 3-8 minutes
+│   ├─ Secret Detection: 1-2 minutes
+│   └─ Unit Tests: 5-10 minutes
+│   └─ Subtotal: 9-20 minutes
+├─ Build: 3-5 minutes
+├─ SECURITY-SCAN Stage (Parallel):
+│   ├─ npm audit: 30-60 seconds
+│   ├─ Trivy: 2-5 minutes
+│   ├─ OPA/Conftest: 30-60 seconds
+│   ├─ Gitleaks: 1-3 minutes
+│   └─ RetireJS: 1-2 minutes
+│   └─ Subtotal: 5-11 minutes (parallel execution, longest tool determines duration)
+├─ SonarQube: 5-10 minutes
+├─ Staging Deploy: 2-3 minutes
+├─ STAGING-SECURITY:
+│   ├─ OWASP ZAP Baseline: 5-10 minutes
+│   └─ Security Headers: 10-30 seconds
+│   └─ Subtotal: 5-11 minutes
+└─ TOTAL: ~35-60 minutes (with all security stages, dev/training focused)
+
+Optimization Strategies:
+├─ Parallel execution in SECURITY-SCAN stage (saves 10-15 minutes)
+├─ Cache dependencies (saves 2-5 minutes per run)
+├─ Incremental SAST scans (saves 3-5 minutes)
+├─ Skip STAGING-SECURITY on feature branches (saves 5-10 minutes)
+└─ Optimized Trivy scanning with --skip-dirs (saves 1-2 minutes)
+
+================================================================================
+USEFUL COMMANDS
+================================================================================
+
+MANUAL TOOL EXECUTION (For Testing):
+-------------------------------------
+
+# npm audit
+npm audit --audit-level=moderate
+npm audit fix  # Auto-fix vulnerabilities
+
+# Trivy container scan
+docker pull aquasec/trivy:latest
+trivy image juice-shop:latest --severity HIGH,CRITICAL
+trivy image juice-shop:latest --format json --output trivy-report.json
+
+# OPA/Conftest Dockerfile validation
+docker pull openpolicyagent/conftest:latest
+conftest test Dockerfile
+conftest test --policy ./policy Dockerfile
+# Example: Create policy file (policy/dockerfile.rego):
+# package main
+# deny[msg] {
+#   input[i].Cmd == "from"
+#   val := split(input[i].Value[0], ":")
+#   val[1] == "latest"
+#   msg = "Do not use 'latest' tag for base image"
+# }
+
+# Gitleaks
+docker run --rm -v $(pwd):/repo zricethezav/gitleaks:latest detect --source /repo
+gitleaks detect --verbose --log-level debug
+
+# RetireJS
+docker run --rm -v $(pwd):/src retirejs/retire.js:latest --path /src
+npm install -g retire && retire --path .
+
+# OWASP ZAP baseline scan
+docker run --rm -v $(pwd):/zap/wrk:rw owasp/zap2docker-stable:latest \
+  zap-baseline.py -t http://localhost:3000 -r zap-report.html
+
+# Security Headers check
+curl -I http://localhost:3000 | grep -E "Content-Security-Policy|X-Frame-Options|Strict-Transport-Security"
+
+# SonarQube (requires server setup)
+npm install -g sonarqube-scanner
+sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=.
+
+================================================================================
+CONFIGURATION FILES
+================================================================================
+
+LOCATIONS:
+----------
+├─ .github/workflows/simple-pipeline.yml       (Current pipeline)
+├─ .github/workflows/enhanced-pipeline.yml     (Planned - with security tools)
+├─ .gitlab-ci.yml                              (GitLab Auto-DevOps config)
+├─ .zap/rules.tsv                              (OWASP ZAP custom rules)
+├─ .gitleaks.toml                              (Gitleaks configuration - TBD)
+├─ policy/dockerfile.rego                      (OPA/Conftest Dockerfile policies - TBD)
+├─ policy/kubernetes.rego                      (OPA/Conftest K8s policies - TBD)
+├─ sonar-project.properties                    (SonarQube config - TBD)
+└─ trivy.yaml                                  (Trivy policy config - TBD)
+
+SAMPLE CONFIGURATIONS:
+----------------------
+
+# .gitleaks.toml (example)
+[extend]
+useDefault = true
+
+[[rules]]
+description = "Custom API Key Pattern"
+regex = '''(?i)(api[_-]?key|apikey)['"\s:=]+([a-zA-Z0-9]{32,})'''
+tags = ["key", "API"]
+
+# policy/dockerfile.rego (OPA/Conftest example)
+package main
+
+deny[msg] {
+  input[i].Cmd == "from"
+  val := split(input[i].Value[0], ":")
+  contains(val[1], "latest")
+  msg = sprintf("Line %d: Do not use 'latest' tag for base images", [i])
+}
+
+deny[msg] {
+  input[i].Cmd == "user"
+  msg == ""
+  msg = "No USER directive found - container will run as root"
+}
+
+warn[msg] {
+  input[i].Cmd == "healthcheck"
+  msg == ""
+  msg = "No HEALTHCHECK directive found - consider adding one"
+}
+
+# trivy.yaml (example)
+vulnerability:
+  type:
+    - os
+    - library
+  severities:
+    - CRITICAL
+    - HIGH
+    - MEDIUM
+
+# sonar-project.properties (example)
+sonar.projectKey=juice-shop
+sonar.sources=.
+sonar.exclusions=frontend/node_modules/**,node_modules/**,build/**
+sonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+================================================================================
+TRAINING NOTES
+================================================================================
+
+PEDAGOGICAL APPROACH:
+---------------------
+
+Part 3: Simple Pipeline First (Current State)
+├─ Focus: Get it working (GREEN pipeline)
+├─ Stages: Lint → Test → Build → Push → Deploy
+├─ No security tools yet
+└─ Purpose: Establish baseline before complexity
+
+Part 7: Enhanced Pipeline with Security (Planned)
+├─ Focus: Layer security incrementally
+├─ Start: Add SAST + Secret Detection (blocking)
+├─ Then: Add parallel security scans (warning mode)
+├─ Finally: Add DAST + monitoring (staging validation)
+└─ Purpose: Real-world evolution (not big-bang approach, dev/training focused)
+
+TRAINING VALUE:
+---------------
+✓ See pipeline evolution: Simple → Secure → Mature
+✓ Understand tool purpose and placement
+✓ Learn blocking vs warning strategies
+✓ Practice fixing security findings
+✓ Compare scan results across tools
+✓ Experience DevSecOps workflow
+
+INTENTIONAL VULNERABILITIES:
+----------------------------
+⚠️  IMPORTANT: Juice Shop is intentionally vulnerable
+├─ Tools WILL find real vulnerabilities
+├─ This is EXPECTED and DESIRED for training
+├─ Tools configured in WARNING mode to allow full pipeline execution
+├─ Trainees learn to:
+│   ├─ Interpret security scan results
+│   ├─ Prioritize findings by severity
+│   ├─ Fix vulnerabilities using Claude Code
+│   └─ Verify fixes with re-scans
+└─ Do NOT suggest "fixing" vulnerabilities unless explicitly requested
+
+================================================================================
+REFERENCES
+================================================================================
+
+DOCUMENTATION:
+--------------
+├─ docs/DEVSECOPS_TRAINING_WITH_JUICE_SHOP.txt (Training overview)
+├─ docs/devsecops-practice-summary.txt         (DevSecOps reference material)
+├─ docs/ChangeLog.txt                          (Implementation history)
+├─ docs/Summary/simple-pipeline-setup-summary.txt (Simple pipeline session)
+└─ docs/Summary/DevSecOps-Summary.txt          (DevSecOps tools reference)
+
+PIPELINE IMPLEMENTATIONS:
+-------------------------
+├─ .github/workflows/simple-pipeline.yml       (Current: 5-stage simple pipeline)
+├─ .gitlab-ci.yml                              (GitLab Auto-DevOps with SAST)
+└─ .github/workflows-archive/zap_scan.yml      (Archived: OWASP ZAP example)
+
+TOOL DOCUMENTATION:
+-------------------
+├─ npm audit: https://docs.npmjs.com/cli/v10/commands/npm-audit
+├─ Trivy: https://trivy.dev/
+├─ Gitleaks: https://github.com/gitleaks/gitleaks
+├─ RetireJS: https://retirejs.github.io/retire.js/
+├─ OWASP ZAP: https://www.zaproxy.org/docs/
+├─ SonarQube: https://docs.sonarqube.org/
+├─ KubeSec: https://kubesec.io/
+├─ Falco: https://falco.org/docs/
+└─ DevSecOpsPractice: /Users/rupeshpanwar/Documents/DevSecOpsPractice-main/
+
+DEVSECOPS LEARNING PATH:
+-------------------------
+Reference Repository: DevSecOpsPractice-main/DevSecOps/
+├─ Module 10: DevSecOps-SAST-SonarQube.md
+├─ Module 11: DevSecOps-DependencyCheck-Vulnerabilites.md
+├─ Module 12: DevSecOps-Trivy-Vuln-Scanner.md
+├─ Module 14: DevSecOps-KubeSec.md
+├─ Module 19: DevSecOps-Dyna-App-Sec-Testing.md (OWASP ZAP)
+└─ Module 25: DevSecOps-Falco-Runtime-Security-Helm.md
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+FOR TRAINEES:
+-------------
+1. ✅ Understand simple pipeline (Part 3 completed)
+2. 📋 Review security tool inventory (this document)
+3. 📋 Prepare for Part 7: Enhanced Pipeline with Security Scanning
+4. 📋 Study tool purposes and pipeline placement
+5. 📋 Learn to interpret security scan results
+
+FOR IMPLEMENTATION:
+-------------------
+1. Create .github/workflows/enhanced-pipeline.yml
+2. Add SAST stage (CodeQL or Semgrep)
+3. Add Secret Detection stage (TruffleHog or detect-secrets)
+4. Add parallel security-scan stage (npm audit, Trivy, OPA/Conftest, Gitleaks, RetireJS)
+5. Create OPA/Conftest policy files (policy/dockerfile.rego)
+6. Add SonarQube integration (optional: SonarCloud for cloud-based)
+7. Add DAST stage (OWASP ZAP baseline scan)
+8. Configure warning/blocking thresholds
+9. Create /security-scan-setup slash command
+10. Test full pipeline execution
+11. Document findings and create training materials
+
+FOR ADVANCED TRAINING:
+----------------------
+1. Integrate Kubernetes security tools (KubeSec, KubeBench)
+2. Add runtime monitoring (Falco)
+3. Implement Policy-as-Code (OPA/Conftest)
+4. Set up security monitoring dashboard
+5. Configure automated remediation (Dependabot, Renovate)
+6. Implement security incident response workflow
+
+================================================================================
+END OF DOCUMENT
+================================================================================
+
+Last Updated: 2025-11-25
+Document Owner: DevSecOps Training Team
+Version: 1.3 (Added K8s Security Stage to Horizontal Flow)
+Status: Living Document (will be updated as pipeline evolves)
+
+CHANGELOG:
+----------
+v1.3 (2025-11-25):
+  - Added K8S-SECURITY stage to horizontal pipeline flow diagram
+  - Now shows all 15 tools (11 main + 4 K8s reference) in single flow diagram
+  - K8s tools displayed: #12 KubeSec, #13 KubeBench, #14 KubeScan, #15 Falco
+  - Added 🔮 indicator for reference/optional K8s security tools
+  - Updated TL;DR to mention 5 pipeline stages (including K8s)
+  - Updated STAGE DETAILS to include K8S-SECURITY description
+  - Updated LEGEND to explain [REF] and 🔮 symbols
+  - Pipeline now visually complete with all documented tools
+
+v1.2 (2025-11-25):
+  - Removed all production deployment references (focus on dev/training)
+  - Removed Tool #11 OWASP ZAP (Prod) from main inventory
+  - Removed STAGE 7 & 8 (PROD DEPLOY and PROD-SECURITY) from pipeline
+  - Updated pipeline flow diagram to end at STAGING-SECURITY
+  - Updated tool count from 12 to 11 main tools
+  - Updated OWASP ZAP commands to use localhost:30080 (training environment)
+  - Updated Security Headers check to use training environment URL
+  - Removed production behavior notes from Unit Tests
+  - Added training notes to DAST tools emphasizing dev/training focus
+  - Updated total execution time (~35-60 minutes vs ~40-75 minutes)
+  - Emphasized dev/training environment throughout document
+
+v1.1 (2025-11-25):
+  - Added OPA/Conftest as Tool #6 in main security tools inventory
+  - Updated pipeline flow diagram to include OPA/Conftest in SECURITY-SCAN stage
+  - Added detailed description of OPA/Conftest for Dockerfile validation
+  - Updated tool numbers for Security Headers (now #11) and all subsequent tools
+  - Added sample OPA/Conftest policy configuration (policy/dockerfile.rego)
+  - Updated implementation roadmap and commands section
+  - Total tools count: 11 main tools + 4 K8s reference tools
+
+v1.0 (2025-11-24):
+  - Initial comprehensive security tools documentation
+  - Documented 10 main security tools + 5 K8s reference tools
+  - Created pipeline flow diagram and detailed tool descriptions

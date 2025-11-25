@@ -124,15 +124,15 @@ jobs:
           - name: npm-audit
             display: "npm Audit"
             tool: npm
-          - name: trivy
-            display: "Trivy Container Scan"
-            tool: trivy
-          - name: gitleaks
-            display: "Gitleaks Secrets"
-            tool: gitleaks
           - name: retirejs
             display: "RetireJS"
             tool: retire
+          - name: gitleaks
+            display: "Gitleaks Secrets"
+            tool: gitleaks
+          - name: trivy
+            display: "Trivy Container Scan"
+            tool: trivy
           - name: dockerfile-policy
             display: "Dockerfile Policy (OPA)"
             tool: conftest

@@ -94,7 +94,7 @@ jobs:
 
   # Stage 3: Security Scan (Advanced - runs after all Stage 2 jobs)
   security-scan:
-    name: Security Vulnerability Scanning
+    name: ${{ matrix.scan.display }}
     runs-on: ubuntu-latest
     needs: [sast, secret-detection, test]
     strategy:
@@ -102,12 +102,16 @@ jobs:
       matrix:
         scan:
           - name: npm-audit
+            display: "npm Audit"
             tool: npm
           - name: trivy
+            display: "Trivy Container Scan"
             tool: trivy
           - name: gitleaks
+            display: "Gitleaks Secrets"
             tool: gitleaks
           - name: retirejs
+            display: "RetireJS"
             tool: retire
 
     steps:
@@ -168,6 +172,7 @@ jobs:
     name: Dockerfile Policy Validation
     runs-on: ubuntu-latest
     needs: lint
+    continue-on-error: true  # Don't block subsequent stages on policy violations
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

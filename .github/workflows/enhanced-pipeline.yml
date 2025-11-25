@@ -113,54 +113,101 @@ jobs:
         continue-on-error: true  # Warning mode for training
 
   # Stage 3: Security Scan (Advanced - runs after all Stage 2 jobs)
-  security-scan:
-    name: ${{ matrix.scan.display }}
+  # Stage 3a: npm Audit
+  npm-audit:
+    name: npm Audit
     runs-on: ubuntu-latest
     needs: [sast, secret-detection, test]
-    strategy:
-      fail-fast: false  # Run all scans even if one fails
-      matrix:
-        scan:
-          - name: npm-audit
-            display: "npm Audit"
-            tool: npm
-          - name: retirejs
-            display: "RetireJS"
-            tool: retire
-          - name: gitleaks
-            display: "Gitleaks Secrets"
-            tool: gitleaks
-          - name: trivy
-            display: "Trivy Container Scan"
-            tool: trivy
-          - name: dockerfile-policy
-            display: "Dockerfile Policy (OPA)"
-            tool: conftest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-        if: matrix.scan.name == 'npm-audit' || matrix.scan.name == 'retirejs'
 
-      # npm audit
       - name: Run npm audit
-        if: matrix.scan.name == 'npm-audit'
         run: |
           echo "📦 Running npm audit..."
           npm audit --audit-level=moderate > npm-audit.txt 2>&1 || echo "⚠️  Vulnerabilities found (warning mode)"
           cat npm-audit.txt
         continue-on-error: true
 
-      # Trivy container scan (Using docker-based approach)
+      - name: Upload npm Audit Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-npm-audit
+          path: npm-audit.txt
+          retention-days: 30
+
+  # Stage 3b: RetireJS
+  retirejs:
+    name: RetireJS
+    runs-on: ubuntu-latest
+    needs: [sast, secret-detection, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run RetireJS
+        run: |
+          echo "📚 Running RetireJS scan..."
+          npm install -g retire
+          retire --path . > retirejs-scan.txt 2>&1 || echo "⚠️  Vulnerable libraries found (warning mode)"
+          cat retirejs-scan.txt
+        continue-on-error: true
+
+      - name: Upload RetireJS Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-retirejs
+          path: retirejs-scan.txt
+          retention-days: 30
+
+  # Stage 3c: Gitleaks
+  gitleaks:
+    name: Gitleaks Secrets
+    runs-on: ubuntu-latest
+    needs: [sast, secret-detection, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        run: |
+          echo "🔐 Running Gitleaks secret scan..."
+          docker run --rm -v $(pwd):/repo zricethezav/gitleaks:latest detect --source /repo --verbose > gitleaks-report.txt 2>&1 || echo "⚠️  Secrets found (warning mode)"
+          cat gitleaks-report.txt || echo "No secrets detected"
+        continue-on-error: true
+
+      - name: Upload Gitleaks Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-gitleaks
+          path: gitleaks-report.txt
+          retention-days: 30
+
+  # Stage 3d: Trivy
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    needs: [sast, secret-detection, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Run Trivy scan
-        if: matrix.scan.name == 'trivy'
         run: |
           echo "🐳 Running Trivy container scan..."
           echo "Building image for scanning..."
@@ -185,28 +232,24 @@ jobs:
           echo "📊 Trivy scan completed" | tee -a trivy-scan.txt
         continue-on-error: true
 
-      # Gitleaks secret scanning
-      - name: Run Gitleaks
-        if: matrix.scan.name == 'gitleaks'
-        run: |
-          echo "🔐 Running Gitleaks secret scan..."
-          docker run --rm -v $(pwd):/repo zricethezav/gitleaks:latest detect --source /repo --verbose > gitleaks-report.txt 2>&1 || echo "⚠️  Secrets found (warning mode)"
-          cat gitleaks-report.txt || echo "No secrets detected"
-        continue-on-error: true
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-trivy
+          path: trivy-scan.txt
+          retention-days: 30
 
-      # RetireJS
-      - name: Run RetireJS
-        if: matrix.scan.name == 'retirejs'
-        run: |
-          echo "📚 Running RetireJS scan..."
-          npm install -g retire
-          retire --path . > retirejs-scan.txt 2>&1 || echo "⚠️  Vulnerable libraries found (warning mode)"
-          cat retirejs-scan.txt
-        continue-on-error: true
+  # Stage 3e: Dockerfile Policy
+  dockerfile-policy:
+    name: Dockerfile Policy (OPA)
+    runs-on: ubuntu-latest
+    needs: [sast, secret-detection, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # OPA/Conftest - Dockerfile policy check
       - name: Run Dockerfile Policy Scan
-        if: matrix.scan.name == 'dockerfile-policy'
         run: |
           echo "📋 Running OPA/Conftest policy validation..."
           echo "Using comprehensive security policy from docs/docker/dockerfile-security.rego"
@@ -246,24 +289,19 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Upload Security Scan Report
+      - name: Upload Dockerfile Policy Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: security-scan-${{ matrix.scan.name }}
-          path: |
-            npm-audit.txt
-            trivy-scan.txt
-            gitleaks-report.txt
-            retirejs-scan.txt
-            dockerfile-policy.txt
+          name: security-scan-dockerfile-policy
+          path: dockerfile-policy.txt
           retention-days: 30
 
   # Stage 4: SonarQube (NEW - Manual gate)
   sonar:
     name: SonarQube Code Quality
     runs-on: ubuntu-latest
-    needs: security-scan
+    needs: [npm-audit, retirejs, gitleaks, trivy, dockerfile-policy]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -370,27 +370,63 @@ jobs:
           sleep 30
           kubectl wait --for=condition=ready pod -l app=juice-shop --timeout=120s
 
-      # OWASP ZAP Baseline Scan
-      - name: Run OWASP ZAP Baseline Scan
+      # Application Health Check
+      - name: Application Health Check
         run: |
-          echo "🔍 Running OWASP ZAP baseline scan..."
-          docker run --rm --network host \
-            owasp/zap2docker-stable:latest \
-            zap-baseline.py -t http://localhost:30080 -r zap-report.html || echo "⚠️  Security issues found (warning mode)"
-        continue-on-error: true
+          echo "🏥 Checking application health..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:30080)
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Application is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Application returned HTTP $HTTP_CODE"
+            exit 1
+          fi
 
       # Security Headers Check
-      - name: Check Security Headers
+      - name: Security Headers Analysis
         run: |
-          echo "🔒 Checking security headers..."
-          curl -I http://localhost:30080 | grep -E "Content-Security-Policy|X-Frame-Options|Strict-Transport-Security|X-Content-Type-Options|X-XSS-Protection" || echo "⚠️  Missing security headers (expected for Juice Shop)"
+          echo "🔒 Analyzing HTTP security headers..."
+          echo ""
+          echo "=== Current Security Headers ==="
+          curl -s -D - http://localhost:30080 -o /dev/null 2>&1 | grep -E "^X-|^Content-Security|^Strict-Transport" || true
+          echo ""
+          echo "=== Security Header Assessment ==="
+
+          HEADERS=$(curl -s -D - http://localhost:30080 -o /dev/null 2>&1)
+
+          # Check for present headers
+          echo "$HEADERS" | grep -q "X-Content-Type-Options" && echo "✓ X-Content-Type-Options: Present" || echo "✗ X-Content-Type-Options: Missing"
+          echo "$HEADERS" | grep -q "X-Frame-Options" && echo "✓ X-Frame-Options: Present" || echo "✗ X-Frame-Options: Missing"
+          echo "$HEADERS" | grep -q "Content-Security-Policy" && echo "✓ Content-Security-Policy: Present" || echo "✗ Content-Security-Policy: Missing (expected)"
+          echo "$HEADERS" | grep -q "Strict-Transport-Security" && echo "✓ Strict-Transport-Security: Present" || echo "✗ Strict-Transport-Security: Missing (expected)"
+          echo "$HEADERS" | grep -q "X-XSS-Protection" && echo "✓ X-XSS-Protection: Present" || echo "✗ X-XSS-Protection: Missing (expected)"
+          echo ""
+          echo "⚠️  Note: Juice Shop is intentionally vulnerable - missing headers are expected"
+        continue-on-error: true
+
+      # OWASP ZAP Baseline Scan (Optional - can be resource intensive)
+      - name: OWASP ZAP Baseline Scan
+        run: |
+          echo "🔍 Running OWASP ZAP baseline scan..."
+          echo "Note: This may take 2-5 minutes..."
+
+          # Use correct ZAP docker image: zaproxy/zap-stable
+          timeout 300 docker run --rm --network host \
+            zaproxy/zap-stable:latest \
+            zap-baseline.py -t http://localhost:30080 -I -r zap-report.html \
+            || echo "⚠️  Security issues found or scan timed out (warning mode)"
+
+          echo "📊 ZAP scan completed"
+          echo "⚠️  Findings are expected for intentionally vulnerable application"
         continue-on-error: true
 
       - name: Security scan complete
         run: |
+          echo ""
           echo "✅ K8s Security scans completed"
           echo "📊 Review DAST results for security findings"
           echo "⚠️  Note: Juice Shop is intentionally vulnerable - findings are expected"
+          echo ""
 
   # Final success message
   pipeline-complete:

@@ -170,6 +170,49 @@ parse_zap() {
 }
 
 ################################################################################
+# Parse K8s Manifest Security Scan results
+################################################################################
+parse_k8s_manifest() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo "  ⚠️  K8s manifest scan report not found"
+        return
+    fi
+
+    echo "  🔐 Parsing K8s manifest scan results..."
+
+    # Count policy violations and warnings
+    local failures=$(grep -c "FAIL" "$file" 2>/dev/null || echo "0")
+    local warnings=$(grep -c "WARN" "$file" 2>/dev/null || echo "0")
+
+    TOTAL_HIGH=$((TOTAL_HIGH + failures))
+    TOTAL_MEDIUM=$((TOTAL_MEDIUM + warnings))
+
+    echo "k8s-manifest|0|$failures|$warnings|0" >> "$OUTPUT_DIR/summary.txt"
+}
+
+################################################################################
+# Parse Security Headers Analysis results
+################################################################################
+parse_security_headers() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        echo "  ⚠️  Security headers scan report not found"
+        return
+    fi
+
+    echo "  🔒 Parsing security headers results..."
+
+    # Count missing headers (marked with ✗)
+    local missing=$(grep -c "✗" "$file" 2>/dev/null || echo "0")
+
+    # Missing security headers are medium severity
+    TOTAL_MEDIUM=$((TOTAL_MEDIUM + missing))
+
+    echo "security-headers|0|0|$missing|0" >> "$OUTPUT_DIR/summary.txt"
+}
+
+################################################################################
 # Generate HTML Dashboard
 ################################################################################
 generate_html_report() {
@@ -542,6 +585,8 @@ main() {
     parse_gitleaks "$REPORTS_DIR/gitleaks-report.txt"
     parse_retirejs "$REPORTS_DIR/retirejs-scan.txt"
     parse_dockerfile_policy "$REPORTS_DIR/dockerfile-policy.txt"
+    parse_k8s_manifest "$REPORTS_DIR/k8s-manifest-scan.txt"
+    parse_security_headers "$REPORTS_DIR/security-headers-scan.txt"
     parse_zap "$REPORTS_DIR/zap-report.html"
 
     echo ""

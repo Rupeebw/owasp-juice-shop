@@ -207,31 +207,37 @@ jobs:
         if: matrix.scan.name == 'dockerfile-policy'
         run: |
           echo "📋 Running OPA/Conftest policy validation..."
+          echo "Using comprehensive security policy from docs/docker/dockerfile-security.rego"
           echo "Using docker-based conftest (no binary installation needed)"
           echo ""
 
-          # Verify policy directory exists
-          if [ ! -d "./policy" ]; then
-            echo "⚠️  No ./policy directory found"
-            echo "Note: Using existing policy from ./policy/dockerfile.rego"
-          fi
-
-          echo "🔍 Testing Dockerfile against security policies..." | tee dockerfile-policy.txt
+          echo "🔍 Testing Dockerfile against comprehensive security policies..." | tee dockerfile-policy.txt
+          echo "" | tee -a dockerfile-policy.txt
+          echo "Security checks include:" | tee -a dockerfile-policy.txt
+          echo "  ✓ No secrets in ENV variables" | tee -a dockerfile-policy.txt
+          echo "  ✓ Use trusted base images only" | tee -a dockerfile-policy.txt
+          echo "  ✓ No 'latest' tag for base images" | tee -a dockerfile-policy.txt
+          echo "  ✓ Avoid curl bashing" | tee -a dockerfile-policy.txt
+          echo "  ✓ No system package upgrades in Dockerfile" | tee -a dockerfile-policy.txt
+          echo "  ✓ Use COPY instead of ADD" | tee -a dockerfile-policy.txt
+          echo "  ✓ Don't run as root user" | tee -a dockerfile-policy.txt
+          echo "  ✓ Don't use sudo command" | tee -a dockerfile-policy.txt
+          echo "  ✓ Use multi-stage builds" | tee -a dockerfile-policy.txt
           echo "" | tee -a dockerfile-policy.txt
 
-          # Use docker-based conftest (consistent across all environments)
+          # Use docker-based conftest with comprehensive policy
           set +e  # Disable exit on error for proper handling
           docker run --rm -v $(pwd):/project \
             openpolicyagent/conftest:latest \
-            test --policy ./policy Dockerfile 2>&1 | tee -a dockerfile-policy.txt
+            test --policy ./docs/docker/dockerfile-security.rego Dockerfile 2>&1 | tee -a dockerfile-policy.txt
           CONFTEST_EXIT_CODE=$?
           set -e  # Re-enable exit on error
 
           echo "" | tee -a dockerfile-policy.txt
           if [ $CONFTEST_EXIT_CODE -ne 0 ]; then
             echo "⚠️  Policy violations found (exit code: $CONFTEST_EXIT_CODE)" | tee -a dockerfile-policy.txt
-            echo "📝 This is expected for training - review violations above" | tee -a dockerfile-policy.txt
-            echo "📚 Reference: https://github.com/gbrindisi/dockerfile-security" | tee -a dockerfile-policy.txt
+            echo "📝 This is expected for training - Juice Shop is intentionally vulnerable" | tee -a dockerfile-policy.txt
+            echo "📚 Reference: https://cloudberry.engineering/article/dockerfile-security-best-practices/" | tee -a dockerfile-policy.txt
             echo "✅ Pipeline continues in warning mode" | tee -a dockerfile-policy.txt
           else
             echo "✅ All Dockerfile policies passed!" | tee -a dockerfile-policy.txt

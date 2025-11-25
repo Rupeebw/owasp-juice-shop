@@ -180,11 +180,20 @@ jobs:
           sudo mv conftest /usr/local/bin/
 
           echo "🔍 Testing Dockerfile against security policies..."
-          conftest test Dockerfile --policy ./policy || {
-            echo "⚠️  Policy violations found (warning mode for training)"
-            echo "📝 Review policy violations above to understand security best practices"
-            exit 0
-          }
+          set +e  # Disable exit on error
+          conftest test Dockerfile --policy ./policy
+          CONFTEST_EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+
+          if [ $CONFTEST_EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "⚠️  Policy violations found (exit code: $CONFTEST_EXIT_CODE)"
+            echo "📝 This is expected for training - review violations above"
+            echo "✅ Pipeline continues in warning mode"
+          else
+            echo "✅ All Dockerfile policies passed!"
+          fi
+          exit 0
         continue-on-error: false
 
   # Stage 4: SonarQube (NEW - Manual gate)

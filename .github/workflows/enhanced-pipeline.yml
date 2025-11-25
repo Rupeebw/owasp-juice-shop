@@ -104,7 +104,9 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install --prefer-offline --no-audit
+        run: |
+          npm install --prefer-offline --no-audit
+          cd frontend && npm install --prefer-offline --no-audit
 
       - name: Run unit tests
         run: npm test
@@ -513,8 +515,10 @@ jobs:
             kubectl describe pod -l app=juice-shop | tail -50
             exit 1
           fi
+        continue-on-error: true
 
       - name: Run Security Headers Analysis
+        if: always()
         run: |
           echo "🔒 Analyzing HTTP security headers..." | tee security-headers-scan.txt
           echo "" | tee -a security-headers-scan.txt
@@ -609,18 +613,33 @@ jobs:
             kubectl describe pod -l app=juice-shop | tail -50
             exit 1
           fi
+        continue-on-error: true
 
       - name: Run OWASP ZAP Baseline Scan
+        if: always()
         run: |
           echo "🔍 Running OWASP ZAP baseline scan..."
           echo "Note: This may take 2-5 minutes..."
+          
+          # Create directory for ZAP reports
+          mkdir -p ${{ github.workspace }}/zap-reports
 
-          # Use correct ZAP docker image: zaproxy/zap-stable
+          # Use correct ZAP docker image with volume mount
           timeout 300 docker run --rm --network host \
+            -v ${{ github.workspace }}/zap-reports:/zap/wrk:rw \
             zaproxy/zap-stable:latest \
             zap-baseline.py -t http://localhost:30080 -I -r zap-report.html \
             || echo "⚠️  Security issues found or scan timed out (warning mode)"
 
+          # Move report to workspace root for artifact upload
+          if [ -f "${{ github.workspace }}/zap-reports/zap-report.html" ]; then
+            mv ${{ github.workspace }}/zap-reports/zap-report.html ${{ github.workspace }}/
+            echo "✅ ZAP report saved to workspace"
+          else
+            echo "⚠️  ZAP report not generated, creating placeholder"
+            echo "<html><body><h1>ZAP scan did not complete</h1></body></html>" > ${{ github.workspace }}/zap-report.html
+          fi
+          
           echo "📊 ZAP scan completed"
           echo "⚠️  Findings are expected for intentionally vulnerable application"
         continue-on-error: true

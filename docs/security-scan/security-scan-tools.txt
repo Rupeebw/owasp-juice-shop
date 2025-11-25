@@ -211,16 +211,167 @@ Purpose: Analyze source code for vulnerabilities without executing it
 When: Early in pipeline (left-shift security)
 Blocks: Yes (critical issues)
 
-Tool #1: SAST (Generic)
+Tool #1: SAST (Generic) - CodeQL or Semgrep
 ├─ Purpose: Scan source code for security vulnerabilities
 ├─ Stage: TEST (Blocking)
-├─ Technology: CodeQL, Semgrep, or similar
+├─ Technology: CodeQL (recommended) or Semgrep (lightweight alternative)
 ├─ What it scans: TypeScript/JavaScript source code
 ├─ Detects: SQL injection, XSS, hardcoded secrets, insecure functions
 ├─ Exit behavior: BLOCKS pipeline on HIGH/CRITICAL findings
-├─ Scan time: 3-8 minutes
+├─ Scan time: 3-8 minutes (CodeQL), 1-3 minutes (Semgrep)
 ├─ Implementation: GitHub Actions (planned)
 └─ Status: 📋 Documented, not yet implemented
+
+Tool #1a: CodeQL (Recommended SAST Implementation)
+├─ Purpose: Semantic code analysis for security vulnerabilities
+├─ Developer: GitHub (Microsoft)
+├─ Category: SAST (Static Application Security Testing)
+├─ Stage: TEST (Blocking)
+├─ What it scans:
+│   • JavaScript/TypeScript source code
+│   • Node.js backend code
+│   • Frontend code (Angular, React patterns)
+│   • Configuration files with code logic
+├─ How it works:
+│   • Treats code as data (builds code database)
+│   • Uses semantic queries (not just pattern matching)
+│   • Understands data flow and control flow
+│   • Tracks tainted data through application
+├─ Detects:
+│   • SQL Injection (parameterized query violations)
+│   • Cross-Site Scripting (XSS) - reflected, stored, DOM-based
+│   • Path Traversal (directory traversal attacks)
+│   • Command Injection (shell command vulnerabilities)
+│   • Hardcoded Credentials (passwords, API keys in code)
+│   • Insecure Cryptography (weak algorithms, hardcoded keys)
+│   • Authentication Bypass (logic flaws)
+│   • CSRF vulnerabilities
+│   • Prototype Pollution (JavaScript-specific)
+│   • Regular Expression DoS (ReDoS)
+│   • Insecure Deserialization
+│   • XML External Entity (XXE) injection
+├─ Query Packs:
+│   • security-extended (comprehensive security queries)
+│   • security-and-quality (security + code quality)
+│   • code-scanning (default GitHub scanning)
+├─ Exit behavior: BLOCKS on HIGH/CRITICAL findings
+├─ Scan time: 3-8 minutes (depends on codebase size)
+├─ Output formats:
+│   • SARIF (Static Analysis Results Interchange Format)
+│   • CSV (for reporting)
+│   • GitHub Security tab integration
+├─ GitHub Actions Integration:
+│   uses: github/codeql-action/init@v3
+│   with:
+│     languages: javascript
+│     queries: security-extended
+├─ Advantages:
+│   ✓ Deep semantic analysis (not just regex)
+│   ✓ Low false-positive rate
+│   ✓ Native GitHub integration
+│   ✓ Excellent JavaScript/TypeScript support
+│   ✓ Free for public repositories
+│   ✓ Tracks data flow across functions
+│   ✓ Understands framework patterns (Express, Angular)
+├─ Limitations:
+│   ✗ Slower than pattern-based tools
+│   ✗ Requires compilation/build step
+│   ✗ Limited to supported languages
+├─ Use Cases:
+│   • Production-grade security scanning
+│   • Compliance requirements (SOC2, PCI-DSS)
+│   • Finding complex vulnerabilities
+│   • GitHub-hosted projects
+├─ Example Findings:
+│   • "Unsanitized user input in SQL query" (SQL Injection)
+│   • "User-controlled data in HTML context" (XSS)
+│   • "Hardcoded credentials in source code"
+│   • "Weak cryptographic algorithm (MD5)"
+└─ Status: 📋 Recommended for enhanced-pipeline.yml
+
+Tool #1b: Semgrep (Lightweight SAST Alternative)
+├─ Purpose: Fast pattern-based static analysis
+├─ Developer: Semgrep (r2c)
+├─ Category: SAST (Static Application Security Testing)
+├─ Stage: TEST (Blocking)
+├─ What it scans:
+│   • JavaScript/TypeScript code
+│   • Node.js applications
+│   • Configuration files (JSON, YAML)
+│   • Infrastructure as Code
+├─ How it works:
+│   • Pattern-based matching (like grep but code-aware)
+│   • AST (Abstract Syntax Tree) based
+│   • Custom rule engine
+│   • Fast parallel scanning
+├─ Detects:
+│   • SQL Injection patterns
+│   • XSS vulnerabilities
+│   • Hardcoded secrets (API keys, tokens)
+│   • Insecure function usage
+│   • OWASP Top 10 vulnerabilities
+│   • Custom organizational rules
+│   • Dependency confusion risks
+│   • Insecure configurations
+├─ Rule Sets:
+│   • p/security-audit (comprehensive security)
+│   • p/owasp-top-ten (OWASP Top 10 coverage)
+│   • p/javascript (JavaScript-specific)
+│   • p/typescript (TypeScript-specific)
+│   • Custom rules (YAML-based)
+├─ Exit behavior: BLOCKS on ERROR severity
+├─ Scan time: 1-3 minutes (faster than CodeQL)
+├─ Output formats:
+│   • JSON (structured results)
+│   • SARIF (GitHub integration)
+│   • Text (human-readable)
+│   • GitLab SAST format
+├─ GitHub Actions Integration:
+│   uses: returntocorp/semgrep-action@v1
+│   with:
+│     config: p/security-audit
+├─ Advantages:
+│   ✓ Very fast (2-5x faster than CodeQL)
+│   ✓ Easy custom rule creation
+│   ✓ Multi-language support (30+ languages)
+│   ✓ Low resource usage
+│   ✓ Free tier available
+│   ✓ Works offline (no cloud dependency)
+│   ✓ Simple YAML rule syntax
+├─ Limitations:
+│   ✗ Higher false-positive rate than CodeQL
+│   ✗ Less sophisticated data flow analysis
+│   ✗ Pattern-based (may miss complex vulnerabilities)
+├─ Use Cases:
+│   • Fast feedback in CI/CD
+│   • Custom security policies
+│   • Multi-language projects
+│   • Resource-constrained environments
+│   • Enforcing coding standards
+├─ Example Custom Rule:
+│   rules:
+│     - id: hardcoded-api-key
+│       pattern: |
+│         const API_KEY = "..."
+│       message: "Hardcoded API key detected"
+│       severity: ERROR
+│       languages: [javascript]
+├─ Example Findings:
+│   • "SQL query built from user input"
+│   • "Dangerous function eval() used"
+│   • "Hardcoded password in configuration"
+│   • "Missing input validation"
+└─ Status: 📋 Alternative to CodeQL for faster scans
+
+COMPARISON: CodeQL vs Semgrep
+├─ Speed:           CodeQL (slower) vs Semgrep (faster)
+├─ Accuracy:        CodeQL (higher) vs Semgrep (good)
+├─ False Positives: CodeQL (lower) vs Semgrep (higher)
+├─ Customization:   CodeQL (complex) vs Semgrep (easy)
+├─ Learning Curve:  CodeQL (steep) vs Semgrep (gentle)
+├─ Cost:            CodeQL (free for public) vs Semgrep (free tier)
+├─ GitHub Integration: CodeQL (native) vs Semgrep (supported)
+└─ Recommendation:  CodeQL for production, Semgrep for speed
 
 Tool #7: SonarQube
 ├─ Purpose: Comprehensive code quality and security analysis
@@ -245,16 +396,209 @@ Purpose: Detect exposed credentials, API keys, tokens
 When: Test stage (blocking) + Security-scan stage (warning)
 Blocks: Yes (in TEST stage)
 
-Tool #2: Secret Detection (Generic)
+Tool #2: Secret Detection (Generic) - TruffleHog or detect-secrets
 ├─ Purpose: Detect hardcoded secrets in code
 ├─ Stage: TEST (Blocking)
-├─ Technology: TruffleHog, detect-secrets, or similar
+├─ Technology: TruffleHog (recommended) or detect-secrets (baseline approach)
 ├─ What it scans: All source files, config files, env files
 ├─ Detects: API keys, passwords, tokens, private keys, certificates
 ├─ Exit behavior: BLOCKS on detection
-├─ Scan time: 1-2 minutes
-├─ Patterns: 600+ secret patterns
+├─ Scan time: 1-2 minutes (TruffleHog), 30-60 seconds (detect-secrets)
+├─ Patterns: 700+ secret patterns (TruffleHog), 100+ (detect-secrets)
 └─ Status: 📋 Planned for TEST stage
+
+Tool #2a: TruffleHog (Recommended Secret Detection)
+├─ Purpose: Comprehensive secret scanning with entropy analysis
+├─ Developer: Truffle Security (trufflesecurity)
+├─ Category: Secret Detection / Credential Scanning
+├─ Stage: TEST (Blocking)
+├─ What it scans:
+│   • Git commit history (entire repository history)
+│   • Staged files (pre-commit scanning)
+│   • Working directory (uncommitted changes)
+│   • Docker images (container layers)
+│   • S3 buckets, filesystems (extended scanning)
+├─ How it works:
+│   • Entropy analysis (detects high-randomness strings)
+│   • Regex pattern matching (700+ built-in patterns)
+│   • Verification (validates if secrets are active)
+│   • Git history traversal (finds deleted secrets)
+├─ Detects:
+│   • AWS Access Keys (AKIA*, AWS Secret Access Keys)
+│   • GitHub Personal Access Tokens (ghp_, gho_, ghs_)
+│   • GitLab Tokens (glpat-)
+│   • Google Cloud API Keys
+│   • Azure Storage Keys
+│   • Private SSH Keys (RSA, ECDSA, Ed25519)
+│   • Database Connection Strings (MySQL, PostgreSQL, MongoDB)
+│   • API Keys (Stripe, SendGrid, Twilio, Slack, etc.)
+│   • OAuth Tokens
+│   • JWT Tokens (with sensitive data)
+│   • Encryption Keys (AES, DES)
+│   • Certificates (PEM, PKCS12)
+│   • Generic High-Entropy Strings (custom secrets)
+├─ Secret Verification:
+│   • Validates if detected secrets are ACTIVE
+│   • Tests AWS keys against AWS API
+│   • Tests GitHub tokens against GitHub API
+│   • Reduces false positives significantly
+│   • Provides confidence scores
+├─ Scan Modes:
+│   • git: Scan git repository history
+│   • filesystem: Scan directory without git
+│   • docker: Scan Docker images
+│   • github: Scan GitHub repositories remotely
+├─ Exit behavior: BLOCKS when verified secrets found
+├─ Scan time: 1-2 minutes (depends on git history size)
+├─ Output formats:
+│   • JSON (structured results)
+│   • Plain text (human-readable)
+│   • GitHub Actions annotations
+├─ GitHub Actions Integration:
+│   uses: trufflesecurity/trufflehog@main
+│   with:
+│     path: ./
+│     base: ${{ github.event.repository.default_branch }}
+│     head: HEAD
+│     extra_args: --only-verified
+├─ Advantages:
+│   ✓ Entropy analysis (finds unknown secret types)
+│   ✓ Secret verification (reduces false positives)
+│   ✓ Scans entire git history (finds deleted secrets)
+│   ✓ 700+ built-in detectors
+│   ✓ Active development and updates
+│   ✓ Docker image scanning capability
+│   ✓ Free and open-source
+│   ✓ Low false-positive rate (with verification)
+├─ Limitations:
+│   ✗ Slower on large repositories
+│   ✗ Verification requires network access
+│   ✗ May miss obfuscated secrets
+├─ Use Cases:
+│   • Pre-commit hooks (prevent secret commits)
+│   • CI/CD pipeline gates
+│   • Security audits of existing codebases
+│   • Compliance requirements (SOC2, PCI-DSS)
+│   • Finding leaked credentials in history
+├─ Example Findings:
+│   • "AWS Access Key AKIAIOSFODNN7EXAMPLE (VERIFIED)"
+│   • "GitHub Token ghp_xxxxxxxxxxxxxxxxxxxx (ACTIVE)"
+│   • "Private RSA key detected in commit abc123"
+│   • "High entropy string (possible secret): wJalrXUt..."
+├─ Configuration:
+│   • .trufflehogignore (exclude patterns)
+│   • Custom regex patterns
+│   • Verification toggles
+│   • Entropy thresholds
+└─ Status: 📋 Recommended for TEST stage (blocking)
+
+Tool #2b: detect-secrets (Baseline Approach)
+├─ Purpose: Baseline-driven secret detection with low false positives
+├─ Developer: Yelp
+├─ Category: Secret Detection / Credential Scanning
+├─ Stage: TEST (Blocking)
+├─ What it scans:
+│   • Source code files
+│   • Configuration files (JSON, YAML, XML)
+│   • Environment files (.env)
+│   • Documentation (Markdown, text)
+├─ How it works:
+│   • Creates baseline of known secrets
+│   • Scans for NEW secrets only
+│   • Plugin-based detection system
+│   • Heuristic-based filtering
+├─ Detects:
+│   • AWS keys (basic pattern matching)
+│   • Private keys (PEM format)
+│   • Basic authentication credentials
+│   • High entropy strings
+│   • Slack tokens
+│   • Stripe keys
+│   • Generic API key patterns
+│   • Hex-encoded secrets
+│   • Base64-encoded secrets
+├─ Baseline System:
+│   • .secrets.baseline (JSON file)
+│   • Stores known/approved secrets
+│   • Only alerts on NEW secrets
+│   • Reduces alert fatigue
+│   • Allows intentional secrets (test data)
+├─ Plugins:
+│   • AWSKeyDetector
+│   • PrivateKeyDetector
+│   • SlackDetector
+│   • StripeDetector
+│   • Base64HighEntropyString
+│   • HexHighEntropyString
+│   • KeywordDetector
+├─ Exit behavior: BLOCKS when new secrets found
+├─ Scan time: 30-60 seconds (faster than TruffleHog)
+├─ Output formats:
+│   • JSON baseline file
+│   • Text output (findings)
+│   • Exit codes (for CI/CD)
+├─ GitHub Actions Integration:
+│   - name: Scan for secrets
+│     run: |
+│       pip install detect-secrets
+│       detect-secrets scan --baseline .secrets.baseline
+│       detect-secrets audit .secrets.baseline
+├─ Advantages:
+│   ✓ Very fast scanning
+│   ✓ Baseline system (low false positives)
+│   ✓ Pre-commit hook integration
+│   ✓ Plugin architecture (extensible)
+│   ✓ Allows intentional test secrets
+│   ✓ Python-based (easy to integrate)
+│   ✓ Free and open-source
+├─ Limitations:
+│   ✗ No secret verification (unlike TruffleHog)
+│   ✗ Doesn't scan git history by default
+│   ✗ Fewer built-in patterns than TruffleHog
+│   ✗ Requires baseline management
+├─ Use Cases:
+│   • Pre-commit hooks (fast feedback)
+│   • Projects with test secrets
+│   • Incremental secret scanning
+│   • Low false-positive requirements
+│   • Python-based CI/CD pipelines
+├─ Example Findings:
+│   • "Potential secret in config.json:15 (Base64HighEntropyString)"
+│   • "AWS key pattern detected in .env:3"
+│   • "Private key found in certs/key.pem"
+├─ Configuration:
+│   • .secrets.baseline (baseline file)
+│   • .pre-commit-config.yaml (pre-commit hook)
+│   • Plugin enable/disable
+│   • Entropy thresholds
+├─ Workflow:
+│   1. Initial scan: detect-secrets scan > .secrets.baseline
+│   2. Audit: detect-secrets audit .secrets.baseline
+│   3. CI check: detect-secrets scan --baseline .secrets.baseline
+│   4. Update baseline when adding approved secrets
+└─ Status: 📋 Alternative for baseline-driven approach
+
+COMPARISON: TruffleHog vs detect-secrets
+├─ Scope:            TruffleHog (git history) vs detect-secrets (current state)
+├─ Verification:     TruffleHog (yes) vs detect-secrets (no)
+├─ Speed:            TruffleHog (slower) vs detect-secrets (faster)
+├─ Patterns:         TruffleHog (700+) vs detect-secrets (100+)
+├─ False Positives:  TruffleHog (low with verification) vs detect-secrets (low with baseline)
+├─ Setup:            TruffleHog (simple) vs detect-secrets (baseline required)
+├─ Git History:      TruffleHog (full scan) vs detect-secrets (optional)
+├─ Maintenance:      TruffleHog (active) vs detect-secrets (stable)
+└─ Recommendation:   TruffleHog for comprehensive scanning, detect-secrets for speed
+
+RECOMMENDED STRATEGY: Dual-Layer Secret Detection
+├─ Layer 1 (Pre-commit): detect-secrets
+│   • Fast feedback (30 seconds)
+│   • Prevents accidental commits
+│   • Developer-friendly
+├─ Layer 2 (CI/CD): TruffleHog
+│   • Comprehensive scan (git history)
+│   • Secret verification
+│   • Catches missed secrets
+└─ Result: Best of both worlds (speed + coverage)
 
 Tool #6: Gitleaks
 ├─ Purpose: Detect secrets in git history and code
@@ -1015,11 +1359,42 @@ END OF DOCUMENT
 
 Last Updated: 2025-11-25
 Document Owner: DevSecOps Training Team
-Version: 1.3 (Added K8s Security Stage to Horizontal Flow)
+Version: 1.4 (Added Comprehensive SAST and Secret Detection Tool Details)
 Status: Living Document (will be updated as pipeline evolves)
 
 CHANGELOG:
 ----------
+v1.4 (2025-11-25):
+  - Added comprehensive CodeQL documentation (Tool #1a)
+    • Detailed semantic code analysis capabilities
+    • 12+ vulnerability types detected (SQL injection, XSS, etc.)
+    • GitHub Actions integration examples
+    • Advantages, limitations, and use cases
+  - Added comprehensive Semgrep documentation (Tool #1b)
+    • Pattern-based SAST alternative
+    • Custom rule creation examples
+    • Performance comparison with CodeQL
+    • YAML-based rule syntax
+  - Added CodeQL vs Semgrep comparison matrix
+    • Speed, accuracy, false positives, customization
+    • Recommendation: CodeQL for production, Semgrep for speed
+  - Added comprehensive TruffleHog documentation (Tool #2a)
+    • Entropy analysis and secret verification
+    • 700+ built-in secret detectors
+    • Git history scanning capabilities
+    • Active secret verification (AWS, GitHub, etc.)
+  - Added comprehensive detect-secrets documentation (Tool #2b)
+    • Baseline-driven approach
+    • Plugin architecture details
+    • Pre-commit hook integration
+    • Workflow examples
+  - Added TruffleHog vs detect-secrets comparison matrix
+    • Scope, verification, speed, patterns
+    • Recommended dual-layer strategy
+  - Updated Tool #1 and Tool #2 summaries with specific implementations
+  - Total documentation: 400+ new lines of detailed tool information
+  - Purpose: Address TODO items in enhanced-pipeline.yml (lines 50, 78)
+
 v1.3 (2025-11-25):
   - Added K8S-SECURITY stage to horizontal pipeline flow diagram
   - Now shows all 15 tools (11 main + 4 K8s reference) in single flow diagram
@@ -1056,3 +1431,4 @@ v1.0 (2025-11-24):
   - Initial comprehensive security tools documentation
   - Documented 10 main security tools + 5 K8s reference tools
   - Created pipeline flow diagram and detailed tool descriptions
+

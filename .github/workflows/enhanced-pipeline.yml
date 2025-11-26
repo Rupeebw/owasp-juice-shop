@@ -54,6 +54,22 @@ jobs:
           upload: false  # We'll upload manually to get artifact
         continue-on-error: true  # Warning mode for training
 
+      - name: Generate Human-Readable CodeQL Report
+        if: always()
+        run: |
+          echo "📊 Converting SARIF results to human-readable format..."
+          python3 .github/scripts/parse-sarif.py sarif-results codeql-readable-report.txt
+
+          echo ""
+          echo "✅ Readable report generated!"
+          echo ""
+          echo "Preview of report:"
+          echo "=================="
+          head -50 codeql-readable-report.txt
+          echo "=================="
+          echo "(Full report available in artifact download)"
+        continue-on-error: true
+
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: always()
@@ -66,7 +82,9 @@ jobs:
         if: always()
         with:
           name: codeql-results
-          path: sarif-results/**/*.sarif
+          path: |
+            sarif-results/**/*.sarif
+            codeql-readable-report.txt
           retention-days: 30
 
       - name: SAST scan complete
@@ -75,6 +93,12 @@ jobs:
           echo "📊 Results available in:"
           echo "   1. GitHub Security tab > Code scanning alerts"
           echo "   2. Download 'codeql-results' artifact from this workflow run"
+          echo "   3. Human-readable report: codeql-readable-report.txt (in artifact)"
+          echo ""
+          echo "📄 Report formats:"
+          echo "   • SARIF files: For tool integration and GitHub Security"
+          echo "   • Readable report: For quick review and training purposes"
+          echo ""
           echo "⚠️  Note: Juice Shop is intentionally vulnerable - findings are expected"
 
   # Stage 2b: Secret Detection (Parallel)

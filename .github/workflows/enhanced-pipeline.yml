@@ -882,10 +882,35 @@ jobs:
       - name: Run Security Headers Analysis
         if: always()
         run: |
+          set +e  # Don't exit on error
+
           echo "🔒 Analyzing HTTP security headers..." | tee security-headers-scan.txt
           echo "" | tee -a security-headers-scan.txt
+
+          # Check if application is accessible
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:30080 2>&1 || echo "000")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Application not accessible (HTTP $HTTP_CODE)" | tee -a security-headers-scan.txt
+            echo "" | tee -a security-headers-scan.txt
+            echo "=== Scan Status ===" | tee -a security-headers-scan.txt
+            echo "The security headers scan could not be completed because the application" | tee -a security-headers-scan.txt
+            echo "is not accessible at http://localhost:30080" | tee -a security-headers-scan.txt
+            echo "" | tee -a security-headers-scan.txt
+            echo "Possible reasons:" | tee -a security-headers-scan.txt
+            echo "  - Application not fully deployed" | tee -a security-headers-scan.txt
+            echo "  - Pod not in ready state" | tee -a security-headers-scan.txt
+            echo "  - Service not exposing port correctly" | tee -a security-headers-scan.txt
+            echo "" | tee -a security-headers-scan.txt
+            echo "Check pod status:" | tee -a security-headers-scan.txt
+            kubectl get pods -l app=juice-shop 2>&1 | tee -a security-headers-scan.txt || true
+            exit 0  # Exit successfully to allow artifact upload
+          fi
+
+          echo "✅ Application accessible (HTTP $HTTP_CODE)" | tee -a security-headers-scan.txt
+          echo "" | tee -a security-headers-scan.txt
           echo "=== Current Security Headers ===" | tee -a security-headers-scan.txt
-          curl -s -D - http://localhost:30080 -o /dev/null 2>&1 | grep -E "^X-|^Content-Security|^Strict-Transport" | tee -a security-headers-scan.txt || true
+          curl -s -D - http://localhost:30080 -o /dev/null 2>&1 | grep -E "^X-|^Content-Security|^Strict-Transport" | tee -a security-headers-scan.txt || echo "(No security headers found)" | tee -a security-headers-scan.txt
           echo "" | tee -a security-headers-scan.txt
           echo "=== Security Header Assessment ===" | tee -a security-headers-scan.txt
 

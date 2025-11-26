@@ -509,49 +509,7 @@ jobs:
           path: gitleaks-report.txt
           retention-days: 30
 
-  # Stage 3d: Trivy
-  trivy:
-    name: Trivy Container Scan
-    runs-on: ubuntu-latest
-    needs: [sast, secret-detection, test]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run Trivy scan
-        run: |
-          echo "🐳 Running Trivy container scan..."
-          echo "Building image for scanning..."
-          docker build -t juice-shop:scan .
-
-          echo ""
-          echo "=== Trivy Scan - HIGH Severity (Warning) ===" | tee trivy-scan.txt
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $HOME/.cache:/root/.cache/ \
-            aquasec/trivy:latest image --exit-code 0 --severity HIGH --light juice-shop:scan \
-            2>&1 | tee -a trivy-scan.txt \
-            || echo "⚠️  HIGH severity vulnerabilities found"
-
-          echo "" | tee -a trivy-scan.txt
-          echo "=== Trivy Scan - CRITICAL Severity ===" | tee -a trivy-scan.txt
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $HOME/.cache:/root/.cache/ \
-            aquasec/trivy:latest image --exit-code 0 --severity CRITICAL --light juice-shop:scan \
-            2>&1 | tee -a trivy-scan.txt \
-            || echo "⚠️  CRITICAL vulnerabilities found (warning mode for training)"
-
-          echo "📊 Trivy scan completed" | tee -a trivy-scan.txt
-        continue-on-error: true
-
-      - name: Upload Trivy Report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: security-scan-trivy
-          path: trivy-scan.txt
-          retention-days: 30
-
-  # Stage 3e: Dockerfile Policy
+  # Stage 3d: Dockerfile Policy
   dockerfile-policy:
     name: Dockerfile Policy (OPA)
     runs-on: ubuntu-latest
@@ -612,7 +570,7 @@ jobs:
   sonar:
     name: SonarQube Code Quality
     runs-on: ubuntu-latest
-    needs: [npm-audit, retirejs, gitleaks, trivy, dockerfile-policy]
+    needs: [npm-audit, retirejs, gitleaks, dockerfile-policy]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -670,11 +628,66 @@ jobs:
           path: juice-shop-image.tar
           retention-days: 1
 
+  # Stage 5b: Trivy Container Scan (Security Gate Before Push)
+  trivy:
+    name: Trivy - Scan Built Image
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: |
+          echo "📦 Loading built Docker image..."
+          docker load -i juice-shop-image.tar
+          echo "✅ Image loaded: juice-shop:latest"
+
+      - name: Run Trivy Container Scan
+        run: |
+          echo "🐳 Running Trivy container security scan..."
+          echo "Scanning the actual image that will be pushed to production"
+          echo ""
+
+          echo "=== Trivy Scan - HIGH Severity (Warning) ===" | tee trivy-scan.txt
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $HOME/.cache:/root/.cache/ \
+            aquasec/trivy:latest image --exit-code 0 --severity HIGH --light juice-shop:latest \
+            2>&1 | tee -a trivy-scan.txt \
+            || echo "⚠️  HIGH severity vulnerabilities found"
+
+          echo "" | tee -a trivy-scan.txt
+          echo "=== Trivy Scan - CRITICAL Severity ===" | tee -a trivy-scan.txt
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $HOME/.cache:/root/.cache/ \
+            aquasec/trivy:latest image --exit-code 0 --severity CRITICAL --light juice-shop:latest \
+            2>&1 | tee -a trivy-scan.txt \
+            || echo "⚠️  CRITICAL vulnerabilities found (warning mode for training)"
+
+          echo "" | tee -a trivy-scan.txt
+          echo "📊 Trivy scan completed" | tee -a trivy-scan.txt
+          echo "⚠️  Note: Pipeline continues even with vulnerabilities (warning mode)"
+          echo "🚀 Proceeding to push stage..."
+        continue-on-error: true
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-scan-trivy
+          path: trivy-scan.txt
+          retention-days: 30
+
   # Stage 6: Push (existing)
   push-to-dockerhub:
     name: Push to Docker Hub
     runs-on: ubuntu-latest
-    needs: build
+    needs: trivy
     env:
       DOCKER_USERNAME: rupeedev
       DOCKER_REPO: owasp-juice-shop
@@ -1109,6 +1122,13 @@ jobs:
           path: security-reports/
           merge-multiple: true
 
+      - name: Download Container Scan Report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: container-scan-trivy
+          path: security-reports/
+
       - name: Download K8s Security Reports
         uses: actions/download-artifact@v4
         continue-on-error: true
@@ -1169,10 +1189,11 @@ jobs:
           echo "✅ Pipeline Stages (Parallel Execution Optimized):"
           echo "   Stage 1: Lint ✓"
           echo "   Stage 2: SAST + Secret Detection + Unit Tests (parallel) ✓"
-          echo "   Stage 3: Security Scan (Trivy, Gitleaks, RetireJS - parallel) ✓"
+          echo "   Stage 3: Security Scan (Gitleaks, RetireJS, npm-audit - parallel) ✓"
           echo "           + Dockerfile Policy Validation ✓"
           echo "   Stage 4: SonarQube Analysis ✓"
           echo "   Stage 5: Build & Tag Docker Image ✓"
+          echo "   Stage 5b: Trivy Container Scan (Security Gate) ✓"
           echo "   Stage 6: Push to Docker Hub ✓"
           echo "   Stage 7: Deploy to Kubernetes ✓"
           echo "   Stage 8: K8s Security + DAST (parallel) ✓"

@@ -1,0 +1,981 @@
+
+PIPELINE EXPLAINED
+===================
+
+
+Key Insight:
+
+  • npm audit  → Finds vulnerable dependencies (supply chain)
+  • CodeQL     → Finds vulnerable code (application logic)
+  • TruffleHog → Finds leaked secrets (credentials)
+  • RetireJS   → Finds vulnerable JavaScript libraries (client + server)
+  • Gitleaks   → Finds secrets in git history (commit scanning)
+  • Trivy      → Finds container vulnerabilities (base images + OS packages)
+
+TL;DR
+-----
+Linting = Automated code quality checker that finds bugs, style issues, and
+potential errors BEFORE code runs. Think of it as spell-check for code.
+
+
+Command Execution:
+------------------
+Run npm run lint
+  shell: /usr/bin/bash -e {0}
+
+Meaning:
+  • npm run lint      → Executes the lint script from package.json
+  • /usr/bin/bash     → Uses Bash shell to run the command
+  • -e flag           → Exit immediately if any command fails (error handling)
+  • {0}               → Placeholder for the command to execute
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why Lint in Stage 1?
+--------------------
+✓ Catch issues early    → Before running tests or building
+✓ Fast feedback          → Linting takes seconds, not minutes
+✓ Prevent tech debt      → Enforce code standards automatically
+✓ Security baseline      → Detect unsafe patterns early
+✓ Team consistency       → Everyone follows same code style
+
+Pipeline Position:
+------------------
+Stage 1: Lint              ← (First quality gate)
+
+
+INTERPRETATION OF  OUTPUT
+==========================
+
+Result: SUCCESS ✓
+-----------------
+✓ Backend ESLint     → Passed (no errors)
+✓ Frontend ng lint   → Passed ("All files pass linting.")
+✓ SCSS Stylelint     → Passed (no output = success)
+
+What this means:
+• Code quality is good
+• No syntax errors detected
+• Consistent code style across project
+• Ready to proceed to next pipeline stages
+
+
+COMMON LINT ERRORS (What to expect in vulnerable apps)
+=======================================================
+
+If linting HAD failed, you might see:
+
+Backend (ESLint):
+  ✗ error  'password' is defined but never used        no-unused-vars
+  ✗ error  Unexpected console statement                no-console
+  ✗ error  'eval' can be harmful                       no-eval
+  ✗ error  Missing semicolon                           semi
+
+Frontend (ng lint):
+  ✗ error  Component should implement OnDestroy
+  ✗ error  Use async pipe instead of manual subscribe
+
+SCSS (stylelint):
+  ✗ error  Expected single space after ":"             declaration-colon-space-after
+  ✗ error  Unexpected unknown property "colour"        property-no-unknown
+
+================================================================================
+
+================================================================================
+
+STAGE 2: SAST - CodeQL Analysis
+================================
+
+TL;DR
+-----
+SAST = Static Application Security Testing. CodeQL analyzes source code for
+security vulnerabilities (SQL injection, XSS, etc.) WITHOUT running the app.
+Think of it as a security-focused X-ray of your code.
+
+
+Command Execution:
+------------------
+GitHub Actions: CodeQL action workflow
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: javascript, typescript
+        queries: security-extended,security-and-quality
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+Meaning:
+  • init@v2              → Sets up CodeQL database for code analysis
+  • languages            → Analyzes JavaScript and TypeScript files
+  • security-extended    → Runs comprehensive security vulnerability checks
+  • analyze@v2           → Executes analysis and uploads to GitHub Security tab
+  • Results              → Available in GitHub Security → Code scanning alerts
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why SAST - CodeQL in Stage 2?
+------------------------------
+✓ Shift-left security       → Catch vulnerabilities before deployment
+✓ Zero false positives      → Semantic analysis, not pattern matching
+✓ OWASP Top 10 coverage     → Detects all major vulnerability classes
+✓ GitHub native             → Results in Security tab with PR annotations
+✓ Data flow tracking        → Traces vulnerabilities across files/functions
+
+Pipeline Position:
+------------------
+Stage 2: SAST + Secret Detection + Unit Tests (parallel)    ← After Lint
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: SUCCESS (with security findings tracked separately)
+------------------------------------------------------------
+CodeQL uploads results to GitHub Security → Code scanning alerts
+
+Typical Juice Shop Findings (intentionally vulnerable app):
+
+✓ SQL Injection (CWE-89)           → High Severity
+  Location: routes/user.js:45
+  "User input flows to SQL query without sanitization"
+
+✓ Cross-Site Scripting (CWE-79)    → High Severity
+  Location: views/profile.ts:128
+  "Unsanitized user data rendered in HTML"
+
+✓ Path Traversal (CWE-22)          → Medium Severity
+  Location: controllers/file.js:67
+  "File path constructed from untrusted input"
+
+✓ Command Injection (CWE-78)       → Critical Severity
+  Location: routes/exec.ts:34
+  "Shell command includes unescaped user data"
+
+What this means:
+• CodeQL found vulnerabilities but didn't fail the build (continue-on-error)
+• Results visible in: GitHub Security tab → Code scanning alerts
+• Each finding shows: file location, data flow path, remediation advice
+• For Juice Shop: These are intentional vulnerabilities for training
+
+
+COMMON CODEQL ERRORS (What to expect if things fail)
+=====================================================
+
+If CodeQL HAD failed, you might see:
+
+Initialization Phase:
+  ✗ error  Language 'javascript' not supported              unsupported-language
+  ✗ error  Failed to create database                        database-creation-failed
+  ✗ error  npm install failed during build                  build-failed
+
+Analysis Phase:
+  ✗ error  Out of memory during analysis                    oom-error
+  ✗ error  Query timed out after 120 minutes                query-timeout
+  ⚠ warning Some files could not be analyzed                partial-analysis
+
+Upload Phase:
+  ✗ error  Failed to upload SARIF results                   sarif-upload-failed
+  ⚠ warning Results exceed 10MB size limit                  results-too-large
+
+What these mean:
+  • database-creation-failed: Source code has syntax errors or build issues
+  • oom-error: Large codebase needs more memory (increase runner size)
+  • query-timeout: Very large repos may need custom timeout configuration
+  • sarif-upload-failed: Check GitHub token permissions for Security tab
+
+================================================================================
+
+Key Insight: CodeQL uses semantic analysis to understand code LOGIC, not just
+patterns. It tracks data flow from user input → vulnerable sinks (like SQL
+queries), making it far more accurate than regex-based tools.
+
+
+CodeQL vs SonarQube SAST - Key Differences
+===================================================
+
+
+  Quick Comparison Table
+
+  | Aspect           | CodeQL (GitHub)          | SonarQube                           |
+  |------------------|--------------------------|-------------------------------------|
+  | Type             | Semantic analysis        | Pattern + rule-based analysis       |
+  | Analysis Method  | Data flow tracking       | AST + rules + metrics               |
+  | Focus            | Security vulnerabilities | Code quality + security + tech debt |
+  | Integration      | Native GitHub            | External server/SonarCloud          |
+  | Results Location | GitHub Security tab      | SonarQube dashboard                 |
+  | False Positives  | Very low (semantic)      | Higher (pattern matching)           |
+  | Setup Complexity | Easy (GitHub Actions)    | Moderate (server setup)             |
+  | Cost             | Free for public repos    | Free tier + paid enterprise         |
+
+  ---
+  Detailed Comparison
+
+  1. Analysis Approach
+
+  CodeQL:
+  User Input → Function → Database Query
+       ↓           ↓            ↓
+    [SOURCE]   [SANITIZER]   [SINK]
+  - Traces data flow from sources to sinks
+  - Understands code semantics and logic
+  - Example: "User input from req.body.username flows to SQL query at line 45"
+
+  SonarQube:
+  Code → Parse → Check Rules → Report Issues
+           ↓         ↓             ↓
+         AST    Pattern Match   Metrics
+  - Checks against predefined rules
+  - AST (Abstract Syntax Tree) analysis
+  - Example: "SQL query uses string concatenation (pattern detected)"
+
+  ---
+  2. What They Find
+
+  CodeQL Strengths:
+  ✅ Complex vulnerabilities requiring data flow analysis
+     • SQL Injection with multi-step taint flow
+     • XSS across multiple function calls
+     • Path Traversal through variable chains
+     • Command Injection with indirect calls
+
+  Example from your app:
+  Location: routes/login.ts:34
+  "User input flows to SQL query without sanitization"
+       ↓
+  CodeQL traces: req.body → variable → SQL query (5 steps)
+
+  SonarQube Strengths:
+  ✅ Code quality and maintainability issues
+     • Code smells (duplicated code, long methods)
+     • Cognitive complexity
+     • Test coverage metrics
+     • Technical debt ratio
+     • Security hotspots (requires review)
+     • OWASP Top 10 mapping
+
+  Example issues:
+  - "Method has cognitive complexity of 25 (max 15)"
+  - "4 duplicated code blocks detected"
+  - "Missing unit tests for this component"
+  - "Password hardcoded in source code" (security hotspot)
+
+  ---
+  3. Security Coverage
+
+  CodeQL:
+  - Deep dive: Tracks vulnerabilities through entire codebase
+  - OWASP Top 10: ✅ All covered with high accuracy
+  - CWE Coverage: 300+ CWE patterns
+  - Result: Critical/High severity vulnerabilities
+
+  From your pipeline (Stage 2):
+  ✓ SQL Injection (CWE-89)      → High Severity
+  ✓ XSS (CWE-79)                → High Severity
+  ✓ Path Traversal (CWE-22)     → Medium Severity
+  ✓ Command Injection (CWE-78)  → Critical Severity
+
+  SonarQube:
+  - Broader scope: Security + Quality + Maintainability
+  - OWASP Top 10: ✅ Covered with "Security Hotspots"
+  - Additional: Code smells, bugs, vulnerabilities, tech debt
+  - Result: Bugs, Vulnerabilities, Code Smells, Security Hotspots
+
+  Typical SonarQube report:
+  📊 Overview:
+     Bugs: 12
+     Vulnerabilities: 8
+     Security Hotspots: 15 (need review)
+     Code Smells: 147
+     Technical Debt: 2d 4h
+     Coverage: 62%
+     Duplications: 3.2%
+
+  ---
+  4. Integration & Workflow
+
+  CodeQL (Your Pipeline - Stage 2):
+  # Stage 2a: SAST (Parallel)
+  sast:
+    name: SAST - CodeQL Analysis
+    - Initialize CodeQL
+    - Perform Analysis
+    - Upload to GitHub Security
+    - Generate readable report  # ← NEW!
+    - Upload artifacts (SARIF + readable)
+
+  Results:
+  - ✅ GitHub Security tab → Code scanning alerts
+  - ✅ PR comments (inline annotations)
+  - ✅ Downloadable SARIF files
+  - ✅ Human-readable reports (your new feature!)
+
+  SonarQube (Your Pipeline - Stage 4):
+  # Stage 4: SonarQube (placeholder)
+  sonar:
+    name: SonarQube Code Quality
+    - Checkout code (fetch-depth: 0 for blame data)
+    - Run SonarScanner
+    - Upload to SonarQube/SonarCloud
+    - Quality Gate check
+
+  Results:
+  - ✅ SonarQube Dashboard (web UI)
+  - ✅ Quality Gate status (pass/fail)
+  - ✅ Project metrics over time
+  - ✅ Technical debt tracking
+
+  ---
+  5. When to Use Each
+
+  Use CodeQL When:
+  ✅ Need deep security vulnerability analysis
+  ✅ Working with GitHub repositories
+  ✅ Want zero-config security scanning
+  ✅ Focus on OWASP Top 10 compliance
+  ✅ Need low false-positive rate
+  ✅ Want data flow tracking
+
+  Use SonarQube When:
+  ✅ Need comprehensive code quality metrics
+  ✅ Want to track technical debt over time
+  ✅ Need test coverage reporting
+  ✅ Want code smell detection
+  ✅ Managing multiple projects centrally
+  ✅ Need custom quality gates
+  ✅ Want historical trend analysis
+
+
+Secret - Detection - TruffleHog
+===================================================
+https://github.com/trufflesecurity/trufflehog.git
+
+  Detailed Analysis
+
+  Scan Results:
+  {
+    "chunks": 2078,                    // Files/code chunks scanned
+    "bytes": 11681661,                 // ~11.1 MB of code analyzed
+    "verified_secrets": 0,             // ✅ No real secrets found
+    "unverified_secrets": 0,           // ✅ No potential secrets found
+    "scan_duration": "2.21470108s",    // Fast scan (~2.2 seconds)
+    "trufflehog_version": "3.91.1"     // Latest version used
+  }
+
+  ---
+  What TruffleHog Did
+
+  1. Scanned Your Entire Repository:
+  ✓ 2,078 code chunks analyzed
+  ✓ 11.7 MB of data processed
+  ✓ Full git history scanned (fetch-depth: 0)
+  ✓ All commits, branches, and files checked
+
+  2. Looked For:
+  - API keys (AWS, GitHub, Slack, etc.)
+  - Database credentials
+  - Private keys (SSH, SSL, JWT)
+  - OAuth tokens
+  - Service account credentials
+  - Hardcoded passwords
+  - Authentication tokens
+
+  3. Verification Process:
+  verification_caching: {
+    "Hits": 0,          // No previously cached results
+    "Misses": 4,        // Checked 4 potential patterns
+    "HitsWasted": 0,    // No false positives
+    "AttemptsSaved": 0, // First scan
+    "VerificationTimeSpentMS": 1095  // ~1 second verifying
+  }
+
+  ---
+  Key Findings
+
+  ✅ Verified Secrets: 0
+  - No real, active credentials found
+  - TruffleHog validates secrets by testing them against services
+  - Example: If it finds an AWS key, it tries to authenticate with AWS
+  - Result: None found ✅
+
+  ✅ Unverified Secrets: 0
+  - No potential secrets detected
+  - No patterns matching secret formats
+  - Example: Strings that look like AKIA... (AWS format) but couldn't be verified
+  - Result: None found ✅
+
+  ---
+  Non-Critical Error (Line 27)
+
+  ⚠️ Warning: Could not extract password-protected ZIP
+  Location: test/files/passwordProtected.zip
+  Reason: Unsupported compression algorithm
+  Impact: NONE - Test file, not a security issue
+
+  This is expected:
+  - It's a test file in the OWASP Juice Shop test suite
+  - Used for testing file upload vulnerabilities
+  - TruffleHog couldn't extract it (password protected)
+  - Not a security concern
+
+
+
+
+STAGE 3a: npm Audit - Dependency Vulnerability Scanning
+========================================================
+
+TL;DR
+-----
+npm audit = Automated security scanner that checks your dependencies (node_modules)
+for known vulnerabilities. Think of it as a security check for third-party code
+you're using in your application.
+
+
+Command Execution:
+------------------
+Run npm audit --audit-level=moderate
+  shell: /usr/bin/bash -e {0}
+
+Meaning:
+  • npm audit              → Scans package.json and package-lock.json
+  • --audit-level=moderate → Report moderate, high, and critical vulnerabilities
+  • Checks against         → National Vulnerability Database (NVD) + npm registry
+  • Output                 → Report with CVE IDs, severity, and remediation
+
+How it works:
+  1. Reads package-lock.json to get exact dependency versions
+  2. Queries npm registry for known vulnerabilities
+  3. Checks both direct and transitive (nested) dependencies
+  4. Reports CVEs with severity levels and fix recommendations
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why npm Audit in Stage 3a?
+---------------------------
+✓ Supply chain security    → Detect vulnerable dependencies before deployment
+✓ Compliance requirements   → Meet security standards (OWASP, PCI DSS)
+✓ Early detection           → Find issues before they reach production
+✓ Automated remediation     → Get fix recommendations automatically
+✓ Transitive dependency check → Catches nested dependency vulnerabilities
+✓ SBOM awareness            → Know what you're shipping
+
+Pipeline Position:
+------------------
+Stage 3a: npm Audit (Parallel with RetireJS, Gitleaks, Trivy)
+             ↓
+         Runs after Stage 2 (SAST, Secrets, Tests)
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: WARNING (vulnerabilities found but pipeline continues)
+--------------------------------------------------------------
+npm audit report for owasp-juice-shop
+
+Typical Juice Shop Findings (intentionally vulnerable dependencies):
+
+# npm audit report
+
+lodash  <=4.17.20
+Severity: high
+Prototype Pollution in lodash - https://github.com/advisories/GHSA-fvqr-27wr-82fm
+fix available via `npm audit fix --force`
+Will install lodash@4.17.21, which is a breaking change
+node_modules/lodash
+
+jsonwebtoken  0.4.0
+Severity: critical
+jwt.verify() vulnerable to signature bypass - https://github.com/advisories/GHSA-c7hr-j4mj-j2w6
+No fix available
+node_modules/jsonwebtoken
+  express-jwt  *
+  Depends on vulnerable versions of jsonwebtoken
+  node_modules/express-jwt
+
+z-schema  <5.0.0
+Severity: high
+Regular Expression Denial of Service (ReDoS) - https://github.com/advisories/GHSA-qwcr-r2fm-qrc7
+fix available via `npm audit fix`
+node_modules/z-schema
+
+8 vulnerabilities (3 moderate, 3 high, 2 critical)
+
+To address all issues, run:
+  npm audit fix
+
+To address issues that require attention, run:
+  npm audit fix --force
+
+
+What this means:
+• 8 vulnerable packages detected in dependencies
+• Severity breakdown: 3 moderate, 3 high, 2 critical
+• Some have automatic fixes (npm audit fix)
+• Some require manual intervention (breaking changes)
+• For Juice Shop: These are intentional for training purposes
+• Pipeline continues (continue-on-error: true in warning mode)
+
+
+================================================================================
+
+================================================================================
+
+STAGE 3b: RetireJS - Vulnerable JavaScript Library Detection
+=============================================================
+
+TL;DR
+-----
+RetireJS = Scans for known vulnerabilities in JavaScript libraries and Node.js
+modules. Think of it as npm audit but for JavaScript files in your source code,
+not just package.json.
+
+
+Command Execution:
+------------------
+Run RetireJS scan with multiple output formats:
+
+  # Install dependencies (required for node_modules scanning)
+  npm install --prefer-offline --no-audit
+
+  # Install RetireJS globally
+  npm install -g retire
+
+  # Generate JSON report (machine-readable)
+  retire --path . --outputformat json --exitwith 0 > retirejs-report.json
+
+  # Generate CycloneDX SBOM (industry standard)
+  retire --path . --outputformat cyclonedx --exitwith 0 > retirejs-sbom.json
+
+  # Generate verbose text output (human-readable)
+  retire --path . --verbose --exitwith 0 > scan-output.txt
+
+Meaning:
+  • --path .           → Scan current directory recursively
+  • --outputformat     → JSON, CycloneDX, or text format
+  • --exitwith 0       → Continue pipeline even if vulnerabilities found
+  • --verbose          → Detailed output with CVE references
+  • Downloads DB       → Latest vulnerability data from RetireJS GitHub repo
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why RetireJS in Stage 3b?
+--------------------------
+✓ Client-side library scanning    → Detects vulnerable jQuery, Angular, etc.
+✓ Source code analysis             → Finds libraries without package.json
+✓ SBOM generation                  → CycloneDX format for compliance
+✓ Broader coverage than npm audit  → Scans both installed & embedded libraries
+✓ CVE reference tracking           → Links to security advisories
+
+Pipeline Position:
+------------------
+Stage 3b: RetireJS (Parallel with npm-audit, Gitleaks, Trivy, Dockerfile-policy)
+             ↓
+         Runs after Stage 2 (SAST, Secrets, Tests)
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: WARNING (vulnerable libraries found, pipeline continues)
+-----------------------------------------------------------------
+RetireJS scan completed with multiple report formats generated.
+
+Typical Juice Shop Findings (intentionally vulnerable app):
+
+Console Output:
+  📚 Running RetireJS scan...
+  Downloading vulnerability database from RetireJS GitHub...
+  Scanning JavaScript libraries and Node.js modules...
+
+  ✅ RetireJS scan completed
+  📊 Generated reports:
+     • retirejs-report.json (JSON format)
+     • retirejs-sbom.json (CycloneDX SBOM)
+     • scan-output.txt (Verbose text)
+
+Human-Readable Report Preview:
+  ================================================================================
+  RETIREJS VULNERABILITY SCAN REPORT
+  ================================================================================
+
+  Total Vulnerabilities: 42
+    • High/Critical: 12
+    • Medium: 18
+    • Low/Info: 12
+
+  ================================================================================
+
+  [1] File: /project/node_modules/jquery/dist/jquery.js
+  --------------------------------------------------------------------------------
+    Component: jquery
+    Version: 3.4.1
+    Detection Method: filecontent
+
+    Vulnerabilities (3):
+
+      [1] Severity: medium
+          CVE: CVE-2020-11022
+          Info: https://github.com/advisories/GHSA-gxr4-xjj5-5px2
+
+      [2] Severity: medium
+          CVE: CVE-2020-11023
+          Info: https://github.com/advisories/GHSA-jpcq-cgw6-v4j6
+
+  [2] File: /project/frontend/src/assets/public/frontend.min.js
+  --------------------------------------------------------------------------------
+    Component: angular
+    Version: 1.6.8
+    Detection Method: filecontent
+
+    Vulnerabilities (2):
+
+      [1] Severity: high
+          CVE: CVE-2019-10768
+          Info: https://snyk.io/vuln/SNYK-JS-ANGULAR-534884
+
+Scan Summary:
+  📊 RetireJS Scan Summary
+  ========================
+  Vulnerable libraries detected: 15
+
+
+What this means:
+• RetireJS found 42 vulnerabilities across 15 libraries
+• Covers both client-side (jQuery, Angular) and server-side (Node modules)
+• Each finding includes CVE ID and severity level
+• Reports uploaded as pipeline artifacts for download
+• Pipeline continues (continue-on-error: true in warning mode)
+• For Juice Shop: Intentional vulnerabilities for training
+
+
+COMMON RETIREJS ERRORS (What to expect if things fail)
+=======================================================
+
+If RetireJS HAD failed, you might see:
+
+Dependency Issues:
+  ✗ error  node_modules not found - run npm install first
+  ✗ error  Network error downloading vulnerability database
+
+Output Format Errors:
+  ✗ error  Invalid output format specified
+  ✗ error  Cannot write to output file (permissions)
+
+Scan Issues:
+  ⚠ warning File too large to scan: frontend/dist/bundle.js
+  ⚠ warning Could not parse JavaScript file (syntax error)
+
+What these mean:
+  • node_modules not found: Install dependencies before running RetireJS
+  • Network error: RetireJS downloads latest vuln DB from GitHub (requires internet)
+  • Invalid format: Use json, cyclonedx, or text (default)
+  • File too large: RetireJS may skip very large minified files
+
+================================================================================
+
+Key Insight: RetireJS detects vulnerable JavaScript libraries by analyzing
+SOURCE CODE content (not just package.json), making it complementary to npm
+audit. It finds libraries embedded in your frontend code that npm audit misses.
+
+================================================================================
+
+================================================================================
+
+STAGE 3c: Gitleaks - Secret Detection in Git History
+=====================================================
+
+TL;DR
+-----
+Gitleaks = Scans git commit history for leaked secrets (API keys, passwords,
+tokens). Think of it as a time machine that checks every commit you ever made
+for accidentally committed credentials.
+
+
+Command Execution:
+------------------
+Run Gitleaks via Docker:
+
+  # Checkout with full git history
+  git fetch --depth 0
+
+  # Run Gitleaks secret scanner
+  docker run --rm -v $(pwd):/repo \
+    zricethezav/gitleaks:latest \
+    detect --source /repo --verbose > gitleaks-report.txt
+
+Meaning:
+  • detect             → Scan mode (checks for secrets)
+  • --source /repo     → Path to git repository
+  • --verbose          → Detailed output with finding context
+  • Full history       → fetch-depth: 0 scans ALL commits
+  • Docker-based       → No installation required
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why Gitleaks in Stage 3c?
+--------------------------
+✓ Git history scanning     → Checks every commit, not just current code
+✓ Pattern-based detection  → Uses 700+ secret patterns (AWS, GitHub, etc.)
+✓ Compliance requirement   → Prevent credential leaks before deployment
+✓ Complement to TruffleHog → Different detection engines, better coverage
+✓ Fast scanning            → Efficient git log analysis
+
+Pipeline Position:
+------------------
+Stage 3c: Gitleaks (Parallel with npm-audit, RetireJS, Trivy, Dockerfile-policy)
+             ↓
+         Runs after Stage 2 (SAST, Secrets, Tests)
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: SUCCESS (no secrets found, or warning mode if found)
+------------------------------------------------------------
+Gitleaks scans git history for leaked credentials.
+
+Typical Output (Clean Scan):
+  🔐 Running Gitleaks secret scan...
+
+      ○
+      │╲
+      │ ○
+      ○ ░
+      ░    gitleaks
+
+  No leaks found! ✅
+
+What this means:
+• No secrets detected in any git commits
+• Repository history is clean
+• Safe to proceed with deployment
+
+Typical Output (Secrets Found - Training App):
+  🔐 Running Gitleaks secret scan...
+
+  Finding: generic-api-key
+  Secret: sk_live_1234567890abcdef...
+  File: config/database.js
+  Line: 23
+  Commit: a1b2c3d (2024-01-15)
+  Author: developer@example.com
+  Date: 2024-01-15 10:30:00
+
+  Finding: aws-access-token
+  Secret: AKIA****************
+  File: .env.backup
+  Line: 5
+  Commit: e4f5g6h (2024-01-10)
+
+  8:40PM INF 2 leaks detected
+  ⚠️  Secrets found (warning mode)
+
+What this means:
+• 2 secrets found in git commit history
+• Even deleted files are checked (git remembers everything)
+• Shows exact commit, file, line where secret was added
+• Pipeline continues (continue-on-error: true)
+• For Juice Shop: May find intentional test credentials
+
+
+COMMON GITLEAKS ERRORS (What to expect if things fail)
+=======================================================
+
+If Gitleaks HAD failed, you might see:
+
+Docker/Setup Issues:
+  ✗ error  Failed to pull Docker image
+  ✗ error  Permission denied: /repo directory
+
+Git History Issues:
+  ✗ error  Not a git repository
+  ✗ error  Shallow clone detected (fetch-depth too small)
+
+Configuration Issues:
+  ✗ error  Invalid .gitleaks.toml configuration
+  ⚠ warning Custom rules failed to compile
+
+What these mean:
+  • Docker pull failed: Check network or Docker Hub access
+  • Not a git repo: Ensure .git directory exists
+  • Shallow clone: Use fetch-depth: 0 to scan full history
+  • Invalid config: Check .gitleaks.toml syntax if using custom rules
+
+================================================================================
+
+Key Insight: Gitleaks scans ENTIRE git history (not just working directory),
+finding secrets in old commits, deleted files, and even reverted changes. This
+is why fetch-depth: 0 is critical - shallow clones miss historical leaks.
+
+Gitleaks vs TruffleHog - Key Differences
+=========================================
+
+  | Aspect             | Gitleaks                    | TruffleHog                  |
+  |--------------------|-----------------------------|-----------------------------|
+  | Detection Method   | Pattern-based (regex)       | Pattern + verification      |
+  | Secret Patterns    | 700+ built-in rules         | 800+ detectors              |
+  | Verification       | ❌ No live verification     | ✅ Verifies with services   |
+  | Speed              | Very fast (regex only)      | Slower (verification calls) |
+  | False Positives    | Higher (no verification)    | Lower (verified secrets)    |
+  | Scan Scope         | Git history + files         | Git history + files         |
+  | Output Detail      | Commit, file, line          | + validity status           |
+  | Use Case           | Quick historical scan       | Deep verified scan          |
+
+When to use each:
+  • Gitleaks    → Fast pattern matching, broad coverage
+  • TruffleHog  → Verification needed, active credentials only
+
+Both run in parallel (Stage 2b: TruffleHog, Stage 3c: Gitleaks) for maximum
+coverage - pattern detection + verification = comprehensive secret scanning.
+
+================================================================================
+
+================================================================================
+
+STAGE 3d: Trivy - Container Security Scanner
+=============================================
+
+TL;DR
+-----
+Trivy = Scans Docker images for OS vulnerabilities, misconfigurations, and
+security issues in base images. Think of it as a security X-ray for your
+container - checking every layer for known vulnerabilities.
+
+
+Command Execution:
+------------------
+Run Trivy via Docker to scan the BUILT image (not building again):
+
+  # Load the built image from previous stage
+  docker load -i juice-shop-image.tar
+
+  # Scan for HIGH severity vulnerabilities
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $HOME/.cache:/root/.cache/ \
+    aquasec/trivy:latest image --exit-code 0 --severity HIGH --light juice-shop:latest
+
+  # Scan for CRITICAL severity vulnerabilities
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $HOME/.cache:/root/.cache/ \
+    aquasec/trivy:latest image --exit-code 0 --severity CRITICAL --light juice-shop:latest
+
+Meaning:
+  • image                → Scan Docker image (not filesystem)
+  • --severity HIGH      → Filter to show HIGH severity vulns
+  • --severity CRITICAL  → Filter to show CRITICAL severity vulns
+  • --exit-code 0        → Continue pipeline even if vulns found
+  • --light              → Faster scan (skip Java archives)
+  • Docker sock mount    → Access to Docker daemon for image inspection
+  • Cache mount          → Reuse vulnerability database across runs
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why Trivy in Stage 3d?
+-----------------------
+✓ Container-specific scanning  → Detects base image vulnerabilities
+✓ OS package vulnerabilities   → Checks Alpine, Debian, Ubuntu packages
+✓ Layer-by-layer analysis      → Identifies which layer introduced vuln
+✓ Fast and comprehensive       → Scans complete image in seconds
+✓ No image push required       → Scans locally built images
+✓ Shift-left security          → Catch container issues before deployment
+
+Pipeline Position:
+------------------
+Stage 5b: Trivy (Security Gate between Build and Push)
+             ↓
+         Runs after Stage 5 (Build & Tag Docker Image)
+         Runs before Stage 6 (Push to Docker Hub)
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: WARNING (vulnerabilities found, pipeline continues)
+-----------------------------------------------------------
+Trivy scans Docker image layers for OS and application vulnerabilities.
+
+Typical Output (Juice Shop Container):
+  🐳 Running Trivy container scan...
+  Building image for scanning...
+
+  === Trivy Scan - HIGH Severity (Warning) ===
+
+  juice-shop:scan (alpine 3.19.1)
+  ===============================
+  Total: 12 (HIGH: 12)
+
+  ┌───────────────┬──────────────┬──────────┬───────────────┬───────────────┬────────────────────────────┐
+  │   Library     │ Vulnerability│ Severity │ Installed Ver │  Fixed Ver    │          Title             │
+  ├───────────────┼──────────────┼──────────┼───────────────┼───────────────┼────────────────────────────┤
+  │ libcrypto3    │ CVE-2024-0727│   HIGH   │  3.1.4-r5     │  3.1.4-r6     │ openssl: denial of service │
+  │               │              │          │               │               │ via null dereference       │
+  ├───────────────┼──────────────┼──────────┼───────────────┼───────────────┼────────────────────────────┤
+  │ libssl3       │ CVE-2024-0727│   HIGH   │  3.1.4-r5     │  3.1.4-r6     │ openssl: denial of service │
+  │               │              │          │               │               │ via null dereference       │
+  ├───────────────┼──────────────┼──────────┼───────────────┼───────────────┼────────────────────────────┤
+  │ zlib          │ CVE-2023-6992│   HIGH   │  1.3.1-r0     │  1.3.1-r1     │ zlib: buffer overflow      │
+  └───────────────┴──────────────┴──────────┴───────────────┴───────────────┴────────────────────────────┘
+
+
+  === Trivy Scan - CRITICAL Severity ===
+
+  juice-shop:scan (alpine 3.19.1)
+  ===============================
+  Total: 3 (CRITICAL: 3)
+
+  ┌───────────────┬──────────────┬──────────┬───────────────┬───────────────┬────────────────────────────┐
+  │   Library     │ Vulnerability│ Severity │ Installed Ver │  Fixed Ver    │          Title             │
+  ├───────────────┼──────────────┼──────────┼───────────────┼───────────────┼────────────────────────────┤
+  │ curl          │ CVE-2024-2398│ CRITICAL │  8.5.0-r0     │  8.7.1-r0     │ curl: TELNET option IAC    │
+  │               │              │          │               │               │ injection                  │
+  └───────────────┴──────────────┴──────────┴───────────────┴───────────────┴────────────────────────────┘
+
+  📊 Trivy scan completed
+  ⚠️  HIGH severity vulnerabilities found
+  ⚠️  CRITICAL vulnerabilities found (warning mode for training)
+
+What this means:
+• 12 HIGH + 3 CRITICAL vulnerabilities in base image OS packages
+• Vulnerabilities in system libraries (OpenSSL, zlib, curl)
+• Shows installed version vs fixed version for remediation
+• Pipeline continues (continue-on-error: true, warning mode)
+• Fix: Update base image or rebuild with patched OS packages
+
+
+
+================================================================================
+
+Key Insight: Trivy scans CONTAINER LAYERS for OS package vulnerabilities,
+identifying exactly which Dockerfile layer introduced each vulnerability. Unlike
+npm audit (app dependencies) or CodeQL (code), Trivy focuses on the container
+runtime environment - base images, system libraries, and OS packages.
+
+
+
+

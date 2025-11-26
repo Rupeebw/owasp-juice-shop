@@ -27,14 +27,14 @@ describe('Sanity Tests', () => {
 
   describe('Environment Checks', () => {
     it('should have Node.js environment available', () => {
-      expect(process).to.exist
+      expect(process).to.not.be.undefined
       expect(process.version).to.be.a('string')
     })
 
     it('should have access to global objects', () => {
-      expect(global).to.exist
-      expect(Object).to.exist
-      expect(Array).to.exist
+      expect(global).to.not.be.undefined
+      expect(Object).to.not.be.undefined
+      expect(Array).to.not.be.undefined
     })
   })
 
@@ -47,7 +47,7 @@ describe('Sanity Tests', () => {
 
     it('should handle setTimeout correctly', (done) => {
       setTimeout(() => {
-        expect(true).to.be.true
+        expect(true).to.equal(true)
         done()
       }, 10)
     })

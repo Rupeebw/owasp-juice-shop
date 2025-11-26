@@ -14,6 +14,7 @@ Key Insight:
   • OPA/Conftest    → Finds Dockerfile policy violations (configuration security)
   • K8s Manifest    → Finds Kubernetes security misconfigurations (deployment security)
   • Security Headers→ Finds missing HTTP security headers (runtime protection)
+  • OWASP ZAP       → Finds runtime vulnerabilities via active scanning (DAST)
 
 TL;DR
 -----
@@ -1382,28 +1383,6 @@ What this means:
 • Pipeline continues (continue-on-error: true) to allow full scan results
 
 
-COMMON SECURITY HEADERS SCAN ERRORS
-====================================
-
-If the scan HAD failed, you might see:
-
-Application Not Accessible:
-  ✗ error  ❌ Application not accessible (HTTP 000)
-  ✗ error  Connection failed - application not ready yet
-
-What these mean:
-  • HTTP 000: curl couldn't connect (app not running or port wrong)
-  • Creates diagnostic report with pod status for troubleshooting
-  • Exits 0 to allow artifact upload (continue-on-error behavior)
-
-Missing Prerequisites:
-  ✗ error  kubectl: command not found
-  ✗ error  Pod not ready within timeout
-
-What these mean:
-  • kubectl not installed: Install step failed
-  • Pod timeout: Deployment step failed or pod crashlooping
-
 
 SECURITY HEADERS REFERENCE
 ===========================
@@ -1457,5 +1436,203 @@ Runner Requirements:
 Key Insight: Security headers are the LAST line of defense (browser-side) after
 all other security scans. Missing CSP/HSTS is intentional in Juice Shop but
 would be CRITICAL in production apps (OWASP A05: Security Misconfiguration).
+
+
+================================================================================
+
+================================================================================
+
+STAGE 8c: OWASP ZAP Baseline Scan - Dynamic Application Security Testing
+=========================================================================
+
+TL;DR
+-----
+DAST = Dynamic Application Security Testing. ZAP actively tests the RUNNING
+application by sending requests and analyzing responses for vulnerabilities.
+Think of it as a penetration tester in a Docker container.
+
+
+Command Execution:
+------------------
+timeout 300 docker run --rm --network host \
+  -v ${{ github.workspace }}/zap-reports:/zap/wrk:rw \
+  zaproxy/zap-stable:latest \
+  zap-baseline.py -t http://localhost:30080 -I -r zap-report.html
+
+Meaning:
+  • timeout 300              → Kill scan after 5 minutes (prevent hanging)
+  • docker run --rm          → Run ZAP container, auto-remove when done
+  • --network host           → Share host network (access localhost:30080)
+  • -v zap-reports:/zap/wrk  → Mount volume for report output
+  • zaproxy/zap-stable       → Official OWASP ZAP Docker image
+  • zap-baseline.py          → Baseline scan script (passive + spider)
+  • -t http://localhost:30080→ Target URL (deployed Juice Shop)
+  • -I                       → Ignore warnings (don't fail on findings)
+  • -r zap-report.html       → HTML report output filename
+
+
+
+
+PURPOSE IN CI/CD PIPELINE
+============================
+
+Why OWASP ZAP in Stage 8c?
+---------------------------
+✓ Runtime testing         → Tests actual deployed app behavior
+✓ Complements SAST        → Finds issues only visible at runtime
+✓ OWASP Top 10 coverage   → Scans for XSS, SQLi, auth issues, etc.
+✓ Automated pentesting    → Mimics real attacker probing
+
+Pipeline Position:
+------------------
+Stage 8c: OWASP ZAP (Parallel with K8s Manifest, Security Headers, Noir)
+             ↓
+         Runs after Stage 7 (Deploy to K8s)
+         Requires app running at localhost:30080
+
+
+INTERPRETATION OF OUTPUT
+==========================
+
+Result: WARNING (findings expected - intentionally vulnerable app)
+------------------------------------------------------------------
+ZAP baseline scan performs passive scanning + spidering. For Juice Shop,
+it WILL find numerous vulnerabilities (that's the point!).
+
+Typical Juice Shop Findings:
+
+Juice Shop is intentionally vulnerable, so ZAP will report:
+
+✓ [Medium] X-Frame-Options Header Not Set
+  URL: http://localhost:30080
+  "Clickjacking protection missing on some endpoints"
+  → Intentional for training challenge
+
+✓ [Medium] Content Security Policy (CSP) Header Not Set
+  URL: http://localhost:30080/*
+  "No CSP header to prevent XSS attacks"
+  → Intentional to allow XSS challenges
+
+✓ [Low] Cookie Without Secure Flag
+  Cookie: token, language
+  "Cookies can be transmitted over HTTP"
+  → Intentional for HTTP testing scenarios
+
+✓ [Informational] Application Error Disclosure
+  URL: http://localhost:30080/rest/user/login
+  "SQL error messages visible to users"
+  → Intentional for SQL injection training
+
+What this means:
+• ZAP report shows OWASP Top 10 vulnerabilities (expected for Juice Shop)
+• Scan runs with -I flag (ignore warnings), so pipeline continues
+• HTML report uploaded as artifact for manual review
+• In production, these would be CRITICAL issues requiring fixes
+
+
+COMMON OWASP ZAP SCAN ERRORS
+=============================
+
+If the scan HAD failed, you might see:
+
+Docker Not Available:
+  ✗ error  Docker is not installed on this runner
+  ✗ error  Cannot connect to Docker daemon at unix:///var/run/docker.sock
+
+What these mean:
+  • Docker not installed: Self-hosted runner missing Docker
+  • Daemon not running: systemctl start docker not executed
+  • Creates diagnostic HTML report with resolution steps
+
+Application Not Accessible:
+  ✗ error  ❌ Application not accessible (HTTP 000)
+  ✗ error  ZAP cannot reach target URL
+
+What these mean:
+  • HTTP 000: Application not running or wrong port
+  • Network issue: --network host may not work on some Docker setups
+  • Creates diagnostic report with pod status for troubleshooting
+
+Scan Timeout:
+  ⚠️  Security issues found or scan timed out (warning mode)
+
+What this means:
+  • Scan exceeded 300s timeout (5 minutes)
+  • Partial results may be available
+  • Expected for large applications or slow responses
+
+
+ZAP SCAN MODES EXPLAINED
+=========================
+
+Baseline Scan (what we use):
+  • Passive scanning    → Analyzes responses without attacking
+  • Spider             → Crawls links to discover endpoints
+  • Duration           → 2-5 minutes typical
+  • Risk level         → Safe, non-destructive
+  • False positives    → Moderate
+
+Alternative Scan Modes (not used):
+  • Full Scan          → Active attacks, longer duration (30+ minutes)
+  • API Scan           → OpenAPI/Swagger spec scanning
+  • Authenticated Scan → Login-required areas
+
+Why Baseline for Juice Shop:
+  • Fast enough for CI/CD (5 min timeout)
+  • Finds most OWASP Top 10 issues
+  • Safe for intentionally vulnerable app
+  • No need for authentication setup
+
+
+DAST vs SAST COMPARISON
+========================
+
+When to use each:
+
+  | Aspect           | SAST (CodeQL)        | DAST (OWASP ZAP)        |
+  |------------------|----------------------|-------------------------|
+  | When             | During code review   | After deployment        |
+  | Analyzes         | Source code          | Running application     |
+  | Finds            | Code-level flaws     | Runtime vulnerabilities |
+  | Access needed    | Source code          | HTTP endpoint access    |
+  | Speed            | Fast (2-3 min)       | Slower (5-10 min)       |
+  | False positives  | Low                  | Moderate                |
+  | Coverage         | Deep code paths      | User-facing surfaces    |
+
+Examples:
+  • SAST finds: SQL injection in code, hardcoded secrets
+  • DAST finds: Missing security headers, session fixation, CORS issues
+
+Both run in pipeline for defense-in-depth:
+  Stage 3a: CodeQL (static analysis of source code)
+  Stage 8c: OWASP ZAP (dynamic analysis of running app)
+
+
+ARTIFACT DETAILS
+================
+
+Uploaded Artifact:
+  • Name: k8s-security-owasp-zap
+  • Path: zap-report.html
+  • Retention: 30 days
+  • Contains: Full ZAP findings with risk levels, URLs, evidence
+
+Report Structure:
+  • Summary: Total alerts by risk level (High/Medium/Low/Info)
+  • Details: Each finding with description, URL, evidence, solution
+  • Format: HTML (viewable in browser)
+
+Runner Requirements:
+  • Type: self-hosted (needs Docker + access to localhost:30080)
+  • Needs: Docker daemon running, kubectl, curl
+  • Network: Must reach deployed K8s service on localhost:30080
+  • Timeout: 300s maximum (5 minutes)
+
+================================================================================
+
+Key Insight: OWASP ZAP is DAST (runtime testing) vs CodeQL's SAST (code testing).
+ZAP finds vulnerabilities only visible when app is running: auth issues, session
+handling, HTTP response problems. For Juice Shop, 20-40 findings are EXPECTED
+and intentional for training. In production, Medium/High findings = blockers.
 
 

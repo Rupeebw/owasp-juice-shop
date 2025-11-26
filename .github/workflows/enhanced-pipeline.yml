@@ -1005,9 +1005,52 @@ jobs:
       - name: Run OWASP ZAP Baseline Scan
         if: always()
         run: |
+          set +e  # Don't exit on error
+
           echo "🔍 Running OWASP ZAP baseline scan..."
           echo "Note: This may take 2-5 minutes..."
-          
+
+          # Check if Docker is available
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker is not installed on this runner"
+            echo "<html><body><h1>ZAP Scan - Docker Not Available</h1>" > zap-report.html
+            echo "<p>The OWASP ZAP scan could not run because Docker is not installed on the self-hosted runner.</p>" >> zap-report.html
+            echo "<h2>Resolution</h2><ul>" >> zap-report.html
+            echo "<li>Install Docker on the self-hosted runner</li>" >> zap-report.html
+            echo "<li>Or use a GitHub-hosted runner (but it won't have access to localhost:30080)</li></ul>" >> zap-report.html
+            echo "</body></html>" >> zap-report.html
+            echo "⚠️  Created diagnostic report"
+            exit 0
+          fi
+
+          # Check if Docker daemon is running
+          if ! docker ps &> /dev/null; then
+            echo "❌ Docker daemon is not running"
+            echo "<html><body><h1>ZAP Scan - Docker Daemon Not Running</h1>" > zap-report.html
+            echo "<p>The OWASP ZAP scan could not run because the Docker daemon is not running.</p>" >> zap-report.html
+            echo "<h2>Resolution</h2><ul>" >> zap-report.html
+            echo "<li>Start Docker daemon: <code>sudo systemctl start docker</code></li>" >> zap-report.html
+            echo "<li>Enable Docker on boot: <code>sudo systemctl enable docker</code></li></ul>" >> zap-report.html
+            echo "</body></html>" >> zap-report.html
+            echo "⚠️  Created diagnostic report"
+            exit 0
+          fi
+
+          # Check if application is accessible
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:30080 2>&1 || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Application not accessible (HTTP $HTTP_CODE)"
+            echo "<html><body><h1>ZAP Scan - Application Not Accessible</h1>" > zap-report.html
+            echo "<p>The application at http://localhost:30080 is not accessible (HTTP $HTTP_CODE).</p>" >> zap-report.html
+            echo "<h2>Pod Status</h2><pre>" >> zap-report.html
+            kubectl get pods -l app=juice-shop 2>&1 | sed 's/</\&lt;/g; s/>/\&gt;/g' >> zap-report.html || true
+            echo "</pre></body></html>" >> zap-report.html
+            echo "⚠️  Created diagnostic report"
+            exit 0
+          fi
+
+          echo "✅ Docker available, daemon running, application accessible"
+
           # Create directory for ZAP reports
           mkdir -p ${{ github.workspace }}/zap-reports
 
@@ -1024,9 +1067,10 @@ jobs:
             echo "✅ ZAP report saved to workspace"
           else
             echo "⚠️  ZAP report not generated, creating placeholder"
-            echo "<html><body><h1>ZAP scan did not complete</h1></body></html>" > ${{ github.workspace }}/zap-report.html
+            echo "<html><body><h1>ZAP scan did not complete</h1>" > ${{ github.workspace }}/zap-report.html
+            echo "<p>The scan may have timed out or encountered an error.</p></body></html>" >> ${{ github.workspace }}/zap-report.html
           fi
-          
+
           echo "📊 ZAP scan completed"
           echo "⚠️  Findings are expected for intentionally vulnerable application"
         continue-on-error: true
